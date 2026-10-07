@@ -122,31 +122,85 @@ actor ImageExporter {
         try Task.checkCancellation()
         return try autoreleasepool {
             let image = raster.image
-            guard let context = CGContext(data: nil, width: image.width, height: image.height,
-                bitsPerComponent: 8, bytesPerRow: image.width * 4,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw ExportError.render }
-            context.setFillColor(CGColor(colorSpace: context.colorSpace!,
-                components: [options.red, options.green, options.blue, 1])!)
-            let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-            context.fill(bounds)
-            context.draw(image, in: bounds)
-            guard let flattened = context.makeImage() else { throw ExportError.render }
+            let flattened = try flatten(image, red: options.red, green: options.green, blue: options.blue)
             try Task.checkCancellation()
             let data = try encode(flattened, type: .jpeg,
                 properties: [kCGImageDestinationLossyCompressionQuality: min(1, max(0, options.quality)),
                              kCGImagePropertyDPIWidth: raster.resolution,
                              kCGImagePropertyDPIHeight: raster.resolution] as CFDictionary)
             try Task.checkCancellation()
-            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-                  let preview = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    // Full size, so the dialog's 100% view shows the real artifacts; capped to keep memory in bounds.
-                    kCGImageSourceThumbnailMaxPixelSize: min(max(image.width, image.height), 8192),
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true
-                  ] as CFDictionary) else { throw ExportError.encode }
+            let preview = try previewThumbnail(data, pixelSize: min(max(image.width, image.height), 8192))
             return JPEGResult(data: data, preview: preview)
+        }
+    }
+
+    /// The image on the matte color, for formats without alpha.
+    private func flatten(_ image: CGImage, red: CGFloat, green: CGFloat, blue: CGFloat) throws -> CGImage {
+        guard let context = CGContext(data: nil, width: image.width, height: image.height,
+            bitsPerComponent: 8, bytesPerRow: image.width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw ExportError.render }
+        context.setFillColor(CGColor(colorSpace: context.colorSpace!, components: [red, green, blue, 1])!)
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.fill(bounds)
+        context.draw(image, in: bounds)
+        guard let flattened = context.makeImage() else { throw ExportError.render }
+        return flattened
+    }
+
+    /// Full-size decode of the encoded bytes (capped to keep memory in bounds), so the dialog's 100% view shows
+    /// the real compression artifacts.
+    private func previewThumbnail(_ data: Data, pixelSize: Int) throws -> CGImage {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let preview = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: pixelSize,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceCreateThumbnailWithTransform: true
+              ] as CFDictionary) else { throw ExportError.encode }
+        return preview
+    }
+
+    /// The image as a single-page PDF whose page is the image's pixel size; alpha is kept as drawn.
+    private func pdfData(_ image: CGImage) throws -> Data {
+        let data = NSMutableData()
+        var mediaBox = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        guard let consumer = CGDataConsumer(data: data),
+              let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { throw ExportError.encode }
+        context.beginPDFPage(nil)
+        context.draw(image, in: mediaBox)
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
+
+    /// Encodes the raster in any format the Export As dialog offers. The preview decodes the encoded bytes, so
+    /// lossy artifacts and GIF's palette reduction show before saving.
+    func encode(_ raster: ExportRaster, options: ExportOptions) throws -> ExportResult {
+        try Task.checkCancellation()
+        return try autoreleasepool {
+            let image = options.format.supportsAlpha ? raster.image
+                : try flatten(raster.image, red: options.red, green: options.green, blue: options.blue)
+            try Task.checkCancellation()
+            let data: Data
+            switch options.format {
+            case .pdf:
+                data = try pdfData(image)
+            default:
+                var properties: [CFString: Any] = [
+                    kCGImagePropertyDPIWidth: raster.resolution,
+                    kCGImagePropertyDPIHeight: raster.resolution
+                ]
+                if options.format.supportsQuality {
+                    properties[kCGImageDestinationLossyCompressionQuality] = min(1, max(0, options.quality))
+                }
+                data = try encode(image, type: options.format.utType, properties: properties as CFDictionary)
+            }
+            try Task.checkCancellation()
+            // A PDF page holds the untouched image, so the raster itself is the faithful preview.
+            let preview = options.format == .pdf ? image
+                : try previewThumbnail(data, pixelSize: min(max(image.width, image.height), 8192))
+            return ExportResult(data: data, preview: preview)
         }
     }
 
@@ -180,6 +234,57 @@ nonisolated struct JPEGOptions: Equatable, Sendable {
     var blue: CGFloat = 1
 }
 nonisolated struct JPEGResult: @unchecked Sendable {
+    let data: Data
+    let preview: CGImage
+}
+
+/// One choice in the Export As dialog's format picker. UI-only: the project file never stores it.
+nonisolated enum ExportFormat: String, CaseIterable, Sendable {
+    case png, jpeg, heic, webp, tiff, gif, bmp, pdf
+    var title: String {
+        switch self {
+        case .webp: "WebP"
+        default: rawValue.uppercased()
+        }
+    }
+    var utType: UTType {
+        switch self {
+        case .png: .png
+        case .jpeg: .jpeg
+        case .heic: .heic
+        case .webp: .webP
+        case .tiff: .tiff
+        case .gif: .gif
+        case .bmp: .bmp
+        case .pdf: .pdf
+        }
+    }
+    var fileExtension: String {
+        switch self {
+        case .jpeg: "jpg"
+        default: rawValue
+        }
+    }
+    /// Lossy formats get the dialog's quality slider.
+    var supportsQuality: Bool { [.jpeg, .heic, .webp].contains(self) }
+    /// The rest flatten transparency onto the matte color, JPEG-fashion.
+    var supportsAlpha: Bool { [.png, .heic, .webp, .tiff, .pdf].contains(self) }
+    /// The formats this Mac can actually write, in picker order. PDF always is: it goes through CGPDFContext.
+    /// Probing replaces CGImageDestinationGetTypeIDs(), which the macOS 27 SDK removed from the headers; a
+    /// destination for an unsupported type fails to create.
+    static var available: [ExportFormat] {
+        allCases.filter { $0 == .pdf || CGImageDestinationCreateWithData(NSMutableData(), $0.utType.identifier as CFString, 1, nil) != nil }
+    }
+}
+
+nonisolated struct ExportOptions: Equatable, Sendable {
+    var format: ExportFormat = .jpeg
+    var quality: Double = 0.85
+    var red: CGFloat = 1
+    var green: CGFloat = 1
+    var blue: CGFloat = 1
+}
+nonisolated struct ExportResult: @unchecked Sendable {
     let data: Data
     let preview: CGImage
 }

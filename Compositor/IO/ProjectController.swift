@@ -190,6 +190,41 @@ final class ProjectController {
         } catch { await showError("无法导出 JPEG", error: error) }
     }
 
+    /// Photoshop-style Export As: the dialog's format picker decides the Save panel's file type and extension,
+    /// so the format the user last picked in the dialog is the one saved.
+    func exportAs() async {
+        guard let window, session.document != nil, begin() else { return }
+        defer { session.isProjectBusy = false }
+        guard let snapshot = session.projectSnapshot() else { return }
+        do {
+            let raster = try await ImageExporter.shared.render(snapshot)
+            let export: (Data, ExportFormat)? = await withCheckedContinuation { continuation in
+                let sheet = NSWindow()
+                sheet.styleMask = [.titled, .fullSizeContentView]
+                sheet.title = "导出为"
+                sheet.contentViewController = NSHostingController(rootView: ExportSheet(raster: raster, session: session) { export in
+                    window.endSheet(sheet)
+                    sheet.orderOut(nil)
+                    // Release the hosted view and its closure after dismissal.
+                    sheet.contentViewController = nil
+                    continuation.resume(returning: export)
+                })
+                window.beginSheet(sheet)
+            }
+            guard let (data, format) = export else { return }
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [format.utType]
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            panel.title = "导出为"
+            panel.nameFieldStringValue = (session.projectURL?.deletingPathExtension().lastPathComponent ?? "未命名") + "." + format.fileExtension
+            guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            try await ImageExporter.shared.write(data, to: url)
+        } catch { await showError("无法导出图像", error: error) }
+    }
+
     private func saveCurrent(asNew: Bool = false) async -> Bool {
         guard session.document != nil else { return true }
         guard let prepared = await prepareSave(asNew: asNew) else { return false }

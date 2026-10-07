@@ -82,6 +82,9 @@ struct CompositorApp: App {
                     Button("导出 JPEG…") { Task { await applicationDelegate.projects.exportJPEG() } }
                         .configuredKeyboardShortcut("s", modifiers: [.command, .option, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                    Button("导出为…") { Task { await applicationDelegate.projects.exportAs() } }
+                        .configuredKeyboardShortcut("e", modifiers: [.command, .option])
+                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
                     Divider()
                     Button("关闭项目") {
                         if let window = applicationDelegate.projects.window {

@@ -76,6 +76,7 @@ struct ShortcutDefinition: Identifiable {
             entry("新建画布", "n", 1, menu: true), entry("打开项目", "o", 1, menu: true),
             entry("存储", "s", 1, menu: true), entry("存储为", "s", 9, menu: true),
             entry("导出 PNG", "e", 9, menu: true), entry("导出 JPEG", "s", 11, menu: true),
+            entry("导出为", "e", 3, menu: true),
             entry("关闭项目", "w", 1, menu: true), entry("适合画布", "0", 1, menu: true),
             entry("实际像素", "1", 1, menu: true), entry("放大", "=", 1, menu: true),
             entry("缩小", "-", 1, menu: true), entry("显示变换控件", "h", 1, menu: true),
