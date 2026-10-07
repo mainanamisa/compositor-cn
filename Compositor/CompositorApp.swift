@@ -1,5 +1,4 @@
 import SwiftUI
-import Sparkle
 
 @main
 struct CompositorApp: App {
@@ -92,9 +91,6 @@ struct CompositorApp: App {
                 }
                 // Grouped: a commands builder takes at most ten items.
                 Group {
-                    CommandGroup(after: .appInfo) {
-                        Button("检查更新…") { applicationDelegate.updater.checkForUpdates(nil) }
-                    }
                     CommandGroup(after: .toolbar) {
                         // With a dialog's preview open (Export JPEG), these zoom that preview rather than the canvas.
                         Button("适应窗口") {
