@@ -1,6 +1,8 @@
 # Compositor 中文版（汉化版）
 
-> 这是 [robbietilton/Compositor](https://github.com/robbietilton/Compositor) 的简体中文本地化分支。上游项目由 Robbie Tilton 开发，采用 MIT 协议（见 LICENSE）。
+> **免责声明 / Disclaimer**：本项目为非官方汉化版，与上游作者无关。汉化版的问题请提到[本仓库的 Issues](../../issues)，不要去打扰上游。
+>
+> This is an **unofficial** Simplified Chinese localization of [robbietilton/Compositor](https://github.com/robbietilton/Compositor), not affiliated with the upstream author. The upstream project is developed by Robbie Tilton and licensed under MIT (see LICENSE).
 >
 > **下载安装**：见 [Releases](../../releases) 页面的 DMG。因为安装包没有 Apple 开发者签名/公证，首次打开需在「系统设置 › 隐私与安全性」里选择「仍要打开」。
 >
