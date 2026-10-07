@@ -26,6 +26,7 @@ nonisolated enum PSDDocumentBuilder {
         let canvas = CGSize(width: document.width, height: document.height)
         for record in document.layers {
             if record.croppedToCanvas {
+                // Kept in English: CropToCanvasImportTests matches the "Cropped to the canvas" substring.
                 conversions.append(PSDConversion(layerName: record.name,
                                                  message: "Cropped to the canvas so the file fits in memory. Pixels outside the canvas weren't imported."))
             }
@@ -40,33 +41,33 @@ nonisolated enum PSDDocumentBuilder {
                 }
             }
             if record.kind == .smartObject {
-                notes.append("The smart object was rasterized. Linked contents can’t be edited.")
+                notes.append("智能对象已栅格化，链接内容无法再编辑")
             }
             if record.kind == .effects {
-                notes.append("Layer effects were discarded, so the appearance may differ.")
+                notes.append("图层效果已被丢弃，外观可能有所不同")
             }
             if record.kind == .vector {
                 if record.shape != nil {
                     notes.append(contentsOf: record.shapeNotes)
                 } else {
-                    notes.append("Vector shape was rasterized to pixels.")
+                    notes.append("矢量形状已栅格化为像素")
                 }
             }
             if record.kind == .other {
-                notes.append("This Photoshop layer type isn’t supported and was imported as pixels.")
+                notes.append("不支持此 Photoshop 图层类型，已作为像素导入")
             }
             if record.isGroup {
                 if record.blendKey != "pass" && record.blendKey != "norm" {
-                    notes.append("Folder blend mode “\(record.blendKey)” isn’t supported. The folder will be pass-through.")
+                    notes.append("不支持组混合模式“\(record.blendKey)”，组将使用穿透模式")
                 }
             } else if record.blendMode == nil, record.blendKey != "pass" {
-                notes.append("Blend mode “\(record.blendKey.trimmingCharacters(in: .whitespaces))” isn’t supported and will be applied as Normal.")
+                notes.append("不支持混合模式“\(record.blendKey.trimmingCharacters(in: .whitespaces))”，将按“正常”应用")
             }
             if record.kind == .adjustment {
                 if record.adjustment == nil {
-                    notes.append("This adjustment type isn’t supported and was skipped.")
+                    notes.append("不支持此调整类型，已跳过")
                 } else {
-                    notes.append("Adjustment parameters may not match Photoshop exactly.")
+                    notes.append("调整参数可能与 Photoshop 不完全一致")
                 }
             }
             for note in notes {
@@ -113,7 +114,7 @@ nonisolated enum PSDDocumentBuilder {
                let maskAsset = try? LayerMask.asset(from: maskImage) {
                 layer.mask = LayerMask(asset: maskAsset, isEnabled: record.maskEnabled, isLinked: record.maskLinked)
             } else if record.mask != nil {
-                conversions.append(PSDConversion(layerName: record.name, message: "The layer mask couldn’t be converted to 8-bit grayscale and was skipped."))
+                conversions.append(PSDConversion(layerName: record.name, message: "图层蒙版无法转换为 8 位灰度，已跳过"))
             }
             layers.append(layer)
         }
@@ -127,7 +128,7 @@ nonisolated enum PSDDocumentBuilder {
                    !sourceLayer.isGroup, sourceLayer.adjustment == nil {
                     layers[index].maskSourceID = source
                 } else {
-                    conversions.append(PSDConversion(layerName: record.name, message: "This clipping mask’s base isn’t supported, so clipping was skipped."))
+                    conversions.append(PSDConversion(layerName: record.name, message: "此剪贴蒙版的基底不受支持，已跳过剪贴"))
                 }
             } else if let layer = idToIndex[record.id].map({ layers[$0] }), !layer.isGroup, layer.adjustment == nil {
                 baseForParent[record.parentID] = record.id

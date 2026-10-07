@@ -33,39 +33,39 @@ struct HueSaturationSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                Picker("Range", selection: settings.range) {
+                Picker("范围", selection: settings.range) {
                     ForEach(ColorRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.menu).frame(width: 160).labelsHidden().disabled(current.colorize)
                 Spacer()
                 samplingControls
             }
-            slider("Hue", value: settings.hue, range: hueRange, unit: "°", track: hueTrack, reset: resetValues.hue)
-            slider("Saturation", value: settings.saturation, range: saturationRange, unit: "", track: saturationTrack,
+            slider("色相", value: settings.hue, range: hueRange, unit: "°", track: hueTrack, reset: resetValues.hue)
+            slider("饱和度", value: settings.saturation, range: saturationRange, unit: "", track: saturationTrack,
                    reset: resetValues.saturation)
-            slider("Lightness", value: settings.lightness, range: -100...100, unit: "",
+            slider("明度", value: settings.lightness, range: -100...100, unit: "",
                    track: .opposing(.black, .white), reset: resetValues.lightness)
             if showsSpectrum {
                 SpectrumEditor(settings: settings)
-                Toggle("Apply outside this range instead", isOn: settings.invertRange)
+                Toggle("改为应用到该范围之外", isOn: settings.invertRange)
             }
             HStack(spacing: 18) {
-                Toggle("Colorize", isOn: Binding(get: { current.colorize }, set: { colorize in
+                Toggle("着色", isOn: Binding(get: { current.colorize }, set: { colorize in
                     // Photoshop starts colorizing at hue 0, saturation 25.
                     settings.wrappedValue = colorize ? .colorizeStart : HueSaturationSettings()
                 }))
-                Toggle("Preview", isOn: preview)
-                Button("Reset") { settings.wrappedValue = current.colorize ? .colorizeStart : HueSaturationSettings() }
+                Toggle("预览", isOn: preview)
+                Button("复位") { settings.wrappedValue = current.colorize ? .colorizeStart : HueSaturationSettings() }
                 Spacer()
             }
             if session.adjustmentOriginal == nil && session.selection != nil {
-                Text("Limited to the selection").font(.callout).foregroundStyle(.secondary)
+                Text("仅应用于选区").font(.callout).foregroundStyle(.secondary)
             }
             Divider()
             HStack {
-                Button("Cancel") { session.cancelHueSaturation() }.configuredNativeShortcut(.escape)
+                Button("取消") { session.cancelHueSaturation() }.configuredNativeShortcut(.escape)
                 Spacer()
-                Button("OK") { Task { await session.commitHueSaturation() } }
+                Button("确定") { Task { await session.commitHueSaturation() } }
                     .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
             }
         }
@@ -102,8 +102,8 @@ struct HueSaturationSheet: View {
                 .buttonStyle(.plain)
                 .background(session.hueTargeting ? Color.accentColor.opacity(0.25) : .clear,
                             in: RoundedRectangle(cornerRadius: 4))
-                .help("Targeted adjustment: drag on the image to change that color's saturation, or its hue with Command held")
-                .accessibilityLabel("Targeted adjustment")
+                .help("目标调整：在图像上拖动可改变该颜色的饱和度，按住 Command 拖动则改变色相")
+                .accessibilityLabel("目标调整")
             }
         }
     }
@@ -128,7 +128,7 @@ struct HueSaturationSheet: View {
             Text(title).frame(width: 76, alignment: .leading)
                 .onTapGesture(count: 2) { value.wrappedValue = reset }
                 .scrubbable(sensitivity: 1, value: value, range: range)
-            CameraRawSlider(value: value.wrappedValue, range: range, track: track, help: "\(title). Double-click to reset.",
+            CameraRawSlider(value: value.wrappedValue, range: range, track: track, help: "\(title)。双击可复位。",
                             onChange: { value.wrappedValue = $0.rounded() }, onReset: { value.wrappedValue = reset })
             TextField(title, value: value, format: .number.precision(.fractionLength(0)))
                 .frame(width: 48).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)

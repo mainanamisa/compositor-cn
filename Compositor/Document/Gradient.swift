@@ -1,14 +1,14 @@
 import AppKit
 
 nonisolated enum GradientStyle: String, CaseIterable, Sendable {
-    case foregroundToBackground = "Foreground to Background"
-    case foregroundToTransparent = "Foreground to Transparent"
+    case foregroundToBackground = "前景色到背景色"
+    case foregroundToTransparent = "前景色到透明"
 }
 
 /// Linear runs from start to end; radial is centered on the start with the end on its rim.
 nonisolated enum GradientShape: String, CaseIterable, Sendable {
-    case linear = "Linear"
-    case radial = "Radial"
+    case linear = "线性"
+    case radial = "径向"
 }
 
 nonisolated struct GradientSettings: Equatable, Sendable {
@@ -113,7 +113,7 @@ extension EditorSession {
         guard edit.hasLine else { cancelGradient(); return }
         do {
             try edit.applyFill()
-            try await commitRasterEdit(edit.raster, name: edit.raster.isMask ? "Gradient Mask" : "Gradient")
+            try await commitRasterEdit(edit.raster, name: edit.raster.isMask ? "渐变蒙版" : "渐变")
         } catch { brushError = error.localizedDescription }
         if gradientEdit === edit { cancelGradient() }
     }

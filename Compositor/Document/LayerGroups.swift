@@ -183,8 +183,8 @@ extension EditorSession {
         }
         let names = Set(document.layers.map(\.name))
         var number = 1
-        while names.contains("Folder \(number)") { number += 1 }
-        var group = ImageLayer(name: "Folder \(number)", blankSize: document.size)
+        while names.contains("组 \(number)") { number += 1 }
+        var group = ImageLayer(name: "组 \(number)", blankSize: document.size)
         group.isGroup = true
         group.parentID = parent
         // Put the wrapper at the topmost selected branch in the common parent.
@@ -204,7 +204,7 @@ extension EditorSession {
             layers.append(child)
         }
         guard (try? LayerHierarchy.validate(layers.map(\.hierarchyRecord))) != nil else { return }
-        beginEdit("Group Layers")
+        beginEdit("图层编组")
         self.document?.layers = layers
         activeLayerID = group.id
         if let parent { collapsedGroupIDs.remove(parent) }
@@ -231,7 +231,7 @@ extension EditorSession {
         Self.releaseDetachedClipping(in: &layers)
         guard (try? LayerHierarchy.validate(layers.map(\.hierarchyRecord))) != nil else { return }
         finishOpacityEdit()
-        beginEdit("Ungroup Layers")
+        beginEdit("取消图层编组")
         self.document?.layers = layers
         selectLayers(childIDs, primary: children.first?.id)
         collapsedGroupIDs.remove(group.id)
@@ -253,15 +253,15 @@ extension EditorSession {
         guard canEditLayers, let document, document.layers.count < 10_000 else { return }
         let names = Set(document.layers.map(\.name))
         var number = 1
-        while names.contains("Folder \(number)") { number += 1 }
-        var group = ImageLayer(name: "Folder \(number)", blankSize: document.size)
+        while names.contains("组 \(number)") { number += 1 }
+        var group = ImageLayer(name: "组 \(number)", blankSize: document.size)
         group.isGroup = true
         group.parentID = activeLayer?.isGroup == true ? activeLayerID : activeLayer?.parentID
         var layers = document.layers
         let insertion = layers.firstIndex(where: { $0.id == activeLayerID }).map { $0 + 1 } ?? layers.count
         layers.insert(group, at: insertion)
         guard (try? LayerHierarchy.validate(layers.map(\.hierarchyRecord))) != nil else { return }
-        beginEdit("New Folder")
+        beginEdit("新建组")
         self.document?.layers = layers
         activeLayerID = group.id
         if let parent = group.parentID { collapsedGroupIDs.remove(parent) }
@@ -296,7 +296,7 @@ extension EditorSession {
         Self.adoptClipping(id, in: &layers)
         Self.releaseDetachedClipping(in: &layers)
         guard (try? LayerHierarchy.validate(layers.map(\.hierarchyRecord))) != nil else { return false }
-        beginEdit("Move Layer")
+        beginEdit("移动图层")
         document?.layers = layers
         activeLayerID = id
         if let parent { collapsedGroupIDs.remove(parent) }

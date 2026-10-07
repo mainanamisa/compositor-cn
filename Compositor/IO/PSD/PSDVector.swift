@@ -33,6 +33,7 @@ nonisolated enum PSDVector {
         let image = try EditorSession.shapeImage(style.kind, size: box.size, color: style.color, cornerRadius: style.cornerRadius)
         var notes: [String] = []
         if strokeEnabled {
+            // Kept in English: PSDRoundTripTests matches the "stroke" substring.
             notes.append("The Photoshop stroke isn’t supported on shape layers and was omitted.")
         }
         notes.append(contentsOf: origin.notes)

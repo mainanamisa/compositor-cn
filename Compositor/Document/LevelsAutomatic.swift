@@ -1,8 +1,8 @@
 import AppKit
 
-nonisolated enum LevelsSample: String, CaseIterable { case black = "Black", gray = "Gray", white = "White" }
+nonisolated enum LevelsSample: String, CaseIterable { case black = "黑场", gray = "灰场", white = "白场" }
 nonisolated enum LevelsAuto: String, CaseIterable {
-    case contrast = "Contrast", color = "Color", neutral = "Color + neutral midtones"
+    case contrast = "对比度", color = "颜色", neutral = "颜色 + 中性中间调"
     func settings(histogram: [[Double]]) -> LevelsSettings {
         var result = LevelsSettings()
         func endpoints(_ bins: [Double]) -> (Double, Double)? {

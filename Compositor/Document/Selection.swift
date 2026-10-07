@@ -68,24 +68,24 @@ nonisolated struct SelectionClip: @unchecked Sendable {
 /// The Magic tool's modes: Wand selects pixels of a similar color, Object traces the outline of
 /// whatever the click lands on. Tab switches between them, as with the Brush's Paint and Erase.
 nonisolated enum WandMode: String, CaseIterable, Sendable {
-    case wand = "Wand"
-    case object = "Object"
+    case wand = "魔棒"
+    case object = "对象"
 }
 
 nonisolated enum LassoKind: String, CaseIterable, Sendable {
-    case freehand = "Freehand"
-    case polygonal = "Polygonal"
+    case freehand = "自由"
+    case polygonal = "多边形"
     /// The Marquee's outlines; not offered in the Lasso's Freehand/Polygonal choice.
-    case rectangle = "Rectangle"
-    case ellipse = "Ellipse"
+    case rectangle = "矩形"
+    case ellipse = "椭圆"
     static let lassoChoices: [LassoKind] = [.freehand, .polygonal]
     static let marqueeChoices: [LassoKind] = [.rectangle, .ellipse]
 }
 
 nonisolated enum SelectionMode: String, CaseIterable, Sendable {
-    case replace = "New"
-    case add = "Add"
-    case subtract = "Subtract"
+    case replace = "新建"
+    case add = "添加"
+    case subtract = "减去"
 }
 
 /// The box a drag from `anchor` to `point` spans, in whole pixels. `square` evens the sides;
@@ -226,8 +226,8 @@ extension EditorSession {
             return
         }
         applySelection(outline, mode: draft.mode,
-                       name: draft.kind == .freehand ? "Lasso" : draft.kind == .polygonal ? "Polygonal Lasso"
-                           : draft.kind == .ellipse ? "Elliptical Marquee" : "Rectangular Marquee")
+                       name: draft.kind == .freehand ? "套索" : draft.kind == .polygonal ? "多边形套索"
+                           : draft.kind == .ellipse ? "椭圆选框" : "矩形选框")
     }
 
     func applySelection(_ shape: CGPath, mode: SelectionMode, name: String) {
@@ -262,7 +262,7 @@ extension EditorSession {
     /// Moves the outline only (never pixels). The whole drag is one undo step.
     func beginSelectionMove() -> Bool {
         guard selectionMoveOrigin == nil, let selection, !selection.isEmpty, canEditSelection else { return false }
-        beginEdit("Move Selection")
+        beginEdit("移动选区")
         selectionMoveOrigin = selection
         return true
     }
@@ -293,7 +293,7 @@ extension EditorSession {
     var canModifySelection: Bool { selection?.isEmpty == false && canEditSelection && lassoDraft == nil }
 
     enum SelectionAmountOperation: String {
-        case expand = "Expand", contract = "Contract", feather = "Feather"
+        case expand = "扩展", contract = "收缩", feather = "羽化"
     }
 
     /// Menu commands ask for an amount; the tool header applies its input directly.
@@ -314,11 +314,11 @@ extension EditorSession {
     }
 
     /// Grows the outline by `amount` pixels with rounded corners (Photoshop's Expand), clipped to the canvas.
-    func expandSelection(by amount: Int) { resizeSelection(by: CGFloat(amount), name: "Expand Selection") }
+    func expandSelection(by amount: Int) { resizeSelection(by: CGFloat(amount), name: "扩展选区") }
 
     /// Shrinks the outline by `amount` pixels, including away from the canvas edges.
     /// Contracting past the middle leaves an explicit empty selection.
-    func contractSelection(by amount: Int) { resizeSelection(by: -CGFloat(amount), name: "Contract Selection") }
+    func contractSelection(by amount: Int) { resizeSelection(by: -CGFloat(amount), name: "收缩选区") }
 
     /// Softens the current selection's edge by `amount` pixels, as Select → Modify → Feather does. Applying it
     /// again softens further, the way Expand and Contract stack up.
@@ -327,7 +327,7 @@ extension EditorSession {
         // Two soft edges together spread a little less than their sum, as blurs do.
         let softened = (current.feather * current.feather + CGFloat(amount) * CGFloat(amount)).squareRoot()
         setSelection(DocumentSelection(path: current.path, antialiased: current.antialiased,
-                                       feather: min(250, softened)), name: "Feather Selection")
+                                       feather: min(250, softened)), name: "羽化选区")
     }
 
     private func resizeSelection(by delta: CGFloat, name: String) {
@@ -343,12 +343,12 @@ extension EditorSession {
 
     func selectAll() {
         guard let document else { return }
-        setSelection(DocumentSelection(path: CGPath(rect: CGRect(origin: .zero, size: document.size), transform: nil)), name: "Select All")
+        setSelection(DocumentSelection(path: CGPath(rect: CGRect(origin: .zero, size: document.size), transform: nil)), name: "全选")
     }
 
     func deselect() {
         guard selection != nil else { return }
-        setSelection(nil, name: "Deselect")
+        setSelection(nil, name: "取消选择")
     }
 
     func invertSelection() {
@@ -358,6 +358,6 @@ extension EditorSession {
                                         feather: current.feather)
         // The inverse of everything is no selection at all, as in Photoshop — not an invisible empty one that
         // quietly stops every brush.
-        setSelection(inverse.isEmpty ? nil : inverse, name: "Inverse")
+        setSelection(inverse.isEmpty ? nil : inverse, name: "反选")
     }
 }

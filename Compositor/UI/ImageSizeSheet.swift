@@ -104,29 +104,29 @@ struct ImageSizeSheet: View {
     var body: some View { sheet.roundedControls() }
     @ViewBuilder private var sheet: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Image Size").font(.title2.bold())
-            Text("Current: \(document.width) × \(document.height) pixels").foregroundStyle(.secondary)
-            Picker("Units", selection: $unit) {
+            Text("图像大小").font(.title2.bold())
+            Text("当前：\(document.width) × \(document.height) 像素").foregroundStyle(.secondary)
+            Picker("单位", selection: $unit) {
                 ForEach(units.filter { resample || ($0 != "Pixels" && $0 != "Percent") }, id: \.self) { Text($0) }
             }
             HStack {
-                Text("Width").frame(width: 75, alignment: .leading)
+                Text("宽度").frame(width: 75, alignment: .leading)
                     .scrubbable(sensitivity: scrubSensitivity(isWidth: true),
                                 value: dimension(isWidth: true), range: scrubRange(isWidth: true), step: 1)
                     .disabled(!canScrubDimensions)
-                TextField("Width", value: dimension(isWidth: true), format: .number.precision(.fractionLength(0...3)))
+                TextField("宽度", value: dimension(isWidth: true), format: .number.precision(.fractionLength(0...3)))
             }
             HStack {
-                Text("Height").frame(width: 75, alignment: .leading)
+                Text("高度").frame(width: 75, alignment: .leading)
                     .scrubbable(sensitivity: scrubSensitivity(isWidth: false),
                                 value: dimension(isWidth: false), range: scrubRange(isWidth: false), step: 1)
                     .disabled(!canScrubDimensions)
-                TextField("Height", value: dimension(isWidth: false), format: .number.precision(.fractionLength(0...3)))
+                TextField("高度", value: dimension(isWidth: false), format: .number.precision(.fractionLength(0...3)))
             }
-            Toggle("Lock aspect ratio", isOn: $locked).disabled(!resample)
+            Toggle("锁定长宽比", isOn: $locked).disabled(!resample)
             HStack {
-                Text("Resolution").scrubbable(sensitivity: 1, value: $resolution, range: 1...9600, step: 1)
-                TextField("Resolution", value: $resolution, format: .number.precision(.fractionLength(0...3)))
+                Text("分辨率").scrubbable(sensitivity: 1, value: $resolution, range: 1...9600, step: 1)
+                TextField("分辨率", value: $resolution, format: .number.precision(.fractionLength(0...3)))
                     .onChange(of: resolution) { _, new in
                         guard new.isFinite, new > 0 else { return }
                         if resample, unit == "Inches" || unit == "Centimeters" {
@@ -135,9 +135,9 @@ struct ImageSizeSheet: View {
                         }
                         lastResolution = new
                     }
-                Text("pixels/inch").foregroundStyle(.secondary)
+                Text("像素/英寸").foregroundStyle(.secondary)
             }
-            Toggle("Resample", isOn: $resample).onChange(of: resample) { _, enabled in
+            Toggle("重新采样", isOn: $resample).onChange(of: resample) { _, enabled in
                 if !enabled {
                     width = Double(document.width)
                     height = Double(document.height)
@@ -146,21 +146,21 @@ struct ImageSizeSheet: View {
                 }
             }
             if resample {
-                Picker("Sampling", selection: $sampling) {
+                Picker("采样", selection: $sampling) {
                     ForEach(LayerSampling.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
-                Text("Resizes layer pixels and applies existing transforms. Undo restores the originals.")
+                Text("将调整图层像素大小并应用已有的变换。撤销可恢复原始状态。")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
-                Text("Only print dimensions and resolution change. Pixels stay unchanged.")
+                Text("仅更改打印尺寸和分辨率，像素保持不变。")
                     .font(.callout).foregroundStyle(.secondary)
             }
-            Text(valid ? "Result: \(Int(width.rounded())) × \(Int(height.rounded())) pixels" : "Use 1–\(DocumentLimits.maxSide.formatted()) pixels per side, up to \(DocumentLimits.maxSurfaceMegapixels) megapixels, and 1–9,600 pixels/inch.")
+            Text(valid ? "结果：\(Int(width.rounded())) × \(Int(height.rounded())) 像素" : "每边须为 1–\(DocumentLimits.maxSide.formatted()) 像素，最大 \(DocumentLimits.maxSurfaceMegapixels) 百万像素，分辨率 1–9,600 像素/英寸。")
                 .foregroundStyle(valid ? Color.secondary : Color.orange).font(.callout)
             HStack {
-                Button("Cancel") { finish(nil) }.configuredNativeShortcut(.escape)
+                Button("取消") { finish(nil) }.configuredNativeShortcut(.escape)
                 Spacer()
-                Button("Resize") {
+                Button("调整大小") {
                     guard valid else { return }
                     finish(ImageSizeOptions(width: Int(width.rounded()), height: Int(height.rounded()),
                         resolution: resolution, sampling: sampling))

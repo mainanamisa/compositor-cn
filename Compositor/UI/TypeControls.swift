@@ -15,7 +15,7 @@ struct TypeControls: View {
     }
     var body: some View {
         HStack(spacing: 12) {
-            Text("Type").font(ToolHeaderStyle.titleFont)
+            Text("文字").font(ToolHeaderStyle.titleFont)
             ScrollView(.horizontal) {
                 HStack(spacing: 10) {
                     TypeFontPicker(fontName: Binding(get: {
@@ -36,8 +36,8 @@ struct TypeControls: View {
                         case .keep: session.keepFontPreview()
                         }
                     })
-                        .frame(width: 210).help("Font face, including bold and italic variants")
-                    TextField("Size", value: number(\.fontSize), format: .number).frame(width: 52)
+                        .frame(width: 210).help("字体，包括粗体与斜体变体")
+                    TextField("大小", value: number(\.fontSize), format: .number).frame(width: 52)
                         .unitSuffix("px", scrubValue: value(\.fontSize), sensitivity: 1, range: 1...2000, step: 1)
                         .arrowSteps(value: { Double(session.currentTextStyle.fontSize) },
                                     change: { stepped in session.changeTextStyle { $0.fontSize = CGFloat(min(2000, max(1, stepped))) } })
@@ -48,7 +48,7 @@ struct TypeControls: View {
                             .overlay { swatch.strokeBorder(.black.opacity(0.5), lineWidth: 1) }
                             .frame(width: 36, height: 18)
                     }
-                    .buttonStyle(.plain).help("Text color").accessibilityLabel("Text color")
+                    .buttonStyle(.plain).help("文本颜色").accessibilityLabel("文本颜色")
                     HStack(spacing: 2) {
                         ForEach(TextAlignment.allCases, id: \.self) { alignment in
                             let selected = session.currentTextStyle.alignment == alignment
@@ -63,35 +63,35 @@ struct TypeControls: View {
                                     .contentShape(RoundedRectangle(cornerRadius: 4))
                             }
                             .buttonStyle(.plain)
-                            .help("Align " + alignment.rawValue.lowercased())
-                            .accessibilityLabel("Align " + alignment.rawValue.lowercased())
+                            .help(alignment.displayName)
+                            .accessibilityLabel(alignment.displayName)
                             .accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
-                    Text("Tracking").scrubbable(sensitivity: 1, value: value(\.tracking), range: -100...1000, step: 1)
-                    TextField("Tracking", value: number(\.tracking), format: .number).frame(width: 45)
+                    Text("字距").scrubbable(sensitivity: 1, value: value(\.tracking), range: -100...1000, step: 1)
+                    TextField("字距", value: number(\.tracking), format: .number).frame(width: 45)
                         .arrowSteps(value: { Double(session.currentTextStyle.tracking) },
                                     change: { stepped in session.changeTextStyle { $0.tracking = CGFloat(stepped) } })
-                    Text("Leading").scrubbable(sensitivity: 1, value: value(\.leading), range: 0...5000, step: 1)
+                    Text("行距").scrubbable(sensitivity: 1, value: value(\.leading), range: 0...5000, step: 1)
                     // 0 means Auto: the field is left empty so its "Auto" placeholder shows through.
-                    TextField("Leading", text: Binding(get: {
+                    TextField("行距", text: Binding(get: {
                         let leading = session.currentTextStyle.leading
                         return leading > 0 ? String(Int(leading.rounded())) : ""
                     }, set: { typed in
                         let value = Double(typed.trimmingCharacters(in: .whitespaces)) ?? 0
                         session.changeTextStyle { $0.leading = CGFloat(max(0, min(5000, value))) }
-                    }), prompt: Text("Auto"))
+                    }), prompt: Text("自动"))
                         .frame(width: 52)
                         .arrowSteps(value: { Double(session.currentTextStyle.lineHeight) },
                                     change: { stepped in session.changeTextStyle { $0.leading = CGFloat(max(0, stepped)) } })
-                        .help("Line height, baseline to baseline. Empty or 0 is Auto: 120% of the font size.")
+                        .help("行高，基线到基线。留空或为 0 时表示自动：字号的 120%。")
                 }
             }.scrollIndicators(.hidden)
             if session.textDraft != nil {
-                Button("Cancel") { session.cancelText() }
-                Button("Done") { _ = session.finishText() }
+                Button("取消") { session.cancelText() }
+                Button("完成") { _ = session.finishText() }
             } else {
-                Button("Edit Text") { session.editActiveText() }.disabled(session.activeLayer?.liveText == nil)
+                Button("编辑文本") { session.editActiveText() }.disabled(session.activeLayer?.liveText == nil)
             }
         }
         .textFieldStyle(.roundedBorder).padding(.horizontal, 18).toolHeaderBar()
@@ -119,7 +119,7 @@ private struct TypeFontPicker: NSViewRepresentable {
         button.cell?.lineBreakMode = .byTruncatingTail
         button.cell?.usesSingleLineMode = true
         button.cell?.alignment = .left
-        button.setAccessibilityLabel("Font")
+        button.setAccessibilityLabel("字体")
         button.target = context.coordinator
         button.action = #selector(Coordinator.choose(_:))
         button.menu?.delegate = context.coordinator
@@ -141,7 +141,7 @@ private struct TypeFontPicker: NSViewRepresentable {
     }
 
     /// Selected letters in more than one face: the menu says so with an item of its own at the top, which isn't a font.
-    private static let multiple = "(Multiple)"
+    private static let multiple = "（多种）"
     private static func isMultiple(_ item: NSMenuItem?) -> Bool { item?.representedObject as? String == multiple }
     static func showMultiple(in button: NSPopUpButton) {
         if !isMultiple(button.item(at: 0)) {
@@ -244,6 +244,16 @@ private struct TypeFontPicker: NSViewRepresentable {
             guard !TypeFontPicker.isMultiple(button.selectedItem),
                   let selected = button.titleOfSelectedItem, selected != fontName.wrappedValue else { return }
             fontName.wrappedValue = selected
+        }
+    }
+}
+
+private extension TextAlignment {
+    var displayName: String {
+        switch self {
+        case .left: return "左对齐"
+        case .center: return "居中对齐"
+        case .right: return "右对齐"
         }
     }
 }

@@ -2,7 +2,7 @@ import Foundation
 import CoreGraphics
 
 nonisolated enum CanvasUnit: String, CaseIterable, Sendable {
-    case pixels = "Pixels", percent = "Percent", inches = "Inches", centimeters = "Centimeters"
+    case pixels = "像素", percent = "百分比", inches = "英寸", centimeters = "厘米"
 }
 
 nonisolated struct CanvasSizeDraft {

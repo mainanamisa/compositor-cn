@@ -133,7 +133,7 @@ nonisolated struct HueBand: Equatable, Sendable, Codable {
 
 /// Which eyedropper is armed while the Hue/Saturation panel is open.
 nonisolated enum HueSampleMode: String, CaseIterable, Sendable {
-    case replace = "Sample", add = "Add", remove = "Remove"
+    case replace = "取样", add = "添加", remove = "减去"
     /// All three are eyedroppers; Add and Remove carry a small badge.
     var symbol: String { "eyedropper" }
     var badge: String? {
@@ -145,9 +145,9 @@ nonisolated enum HueSampleMode: String, CaseIterable, Sendable {
     }
     var help: String {
         switch self {
-        case .replace: "Click the image to center this range on that color"
-        case .add: "Click the image to widen this range to include that color"
-        case .remove: "Click the image to narrow this range to exclude that color"
+        case .replace: "点按图像，将此范围的中心设为该颜色"
+        case .add: "点按图像，扩展此范围以包含该颜色"
+        case .remove: "点按图像，缩小此范围以排除该颜色"
         }
     }
 }
@@ -532,7 +532,7 @@ extension EditorSession {
         guard let adjusted = await adjustedPixels(job),
               let index = document?.layers.firstIndex(where: { $0.id == edit.layerID }),
               let current = document?.layers[index], current.asset?.image === edit.original.image else { return }
-        beginEdit("Hue/Saturation")
+        beginEdit("色相/饱和度")
         document?.layers[index] = ImageLayer(id: current.id,
             asset: ImportedImage(image: adjusted.image, thumbnail: adjusted.thumbnail ?? adjusted.image, name: current.name),
             name: current.name, isVisible: current.isVisible, transform: current.transform, parentID: current.parentID,

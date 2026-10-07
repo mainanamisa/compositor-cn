@@ -8,46 +8,46 @@ struct CameraRawGeometryControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Upright").font(.subheadline)
+            Text("Upright 校正").font(.subheadline)
             Picker("Upright", selection: uprightBinding) {
                 ForEach(CameraRawUprightMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .help("Off leaves the picture as it is. Guided straightens from lines you draw on the picture.")
+            .help("关闭时保持图片原样。引导模式按你在图片上绘制的线条校正。")
             if raw.geometry.upright == .guided {
                 Button {
                     session.filterEdit?.drawingCameraRawGeometryGuide.toggle()
                     session.brushRevision += 1
                 } label: {
-                    Label("Draw Guides", systemImage: "line.diagonal")
+                    Label("绘制引导线", systemImage: "line.diagonal")
                 }
-                .help("Draw two or more lines on the preview that should be level or vertical.")
+                .help("在预览上绘制两条或更多应为水平或垂直的线条。")
                 .tint(session.filterEdit?.drawingCameraRawGeometryGuide == true ? Color.accentColor : Color.secondary)
                 if session.filterEdit?.drawingCameraRawGeometryGuide == true {
-                    Text("Drag on the layer to place a guide. Draw at least two lines.")
+                    Text("在图层上拖移以放置引导线。至少绘制两条线。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if !raw.geometry.guides.isEmpty {
-                    Button("Clear Guides") {
+                    Button("清除引导线") {
                         update { $0.cameraRaw.geometry.guides = [] }
                     }
-                    .help("Remove every guide line.")
+                    .help("移除所有引导线。")
                 }
             }
-            Picker("Projection", selection: binding(\.projection)) {
+            Picker("投影", selection: binding(\.projection)) {
                 ForEach(CameraRawProjection.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            .help("Perspective allows stronger keystone. Rectilinear keeps the warp gentler.")
-            geometrySlider("Vertical", \.vertical, help: "Straightens vertical lines toward the center.")
-            geometrySlider("Horizontal", \.horizontal, help: "Straightens horizontal lines toward the center.")
-            geometrySlider("Rotate", \.rotate, range: CameraRawGeometrySettings.rotateRange, help: "Rotates the picture around its center.")
-            geometrySlider("Aspect", \.aspect, help: "Stretches width relative to height.")
-            geometrySlider("Scale", \.scale, help: "Zooms the transformed picture within the frame.")
-            geometrySlider("Offset X", \.offsetX, help: "Moves the picture left or right.")
-            geometrySlider("Offset Y", \.offsetY, help: "Moves the picture up or down.")
-            Toggle("Constrain Crop", isOn: binding(\.constrainCrop))
-                .help("Crops empty edges after the transform and fits the result back into the frame.")
+            .help("透视允许更强的梯形校正。直线保持较温和的变形。")
+            geometrySlider("垂直", \.vertical, help: "将垂直线向中心校正。")
+            geometrySlider("水平", \.horizontal, help: "将水平线向中心校正。")
+            geometrySlider("旋转", \.rotate, range: CameraRawGeometrySettings.rotateRange, help: "围绕中心旋转图片。")
+            geometrySlider("长宽比", \.aspect, help: "相对于高度拉伸宽度。")
+            geometrySlider("缩放", \.scale, help: "在画面内缩放变换后的图片。")
+            geometrySlider("X 偏移", \.offsetX, help: "左右移动图片。")
+            geometrySlider("Y 偏移", \.offsetY, help: "上下移动图片。")
+            Toggle("限制裁剪", isOn: binding(\.constrainCrop))
+                .help("变换后裁掉空白的边缘，并将结果适配回画面。")
         }
     }
 
@@ -94,26 +94,26 @@ struct CameraRawCalibrationControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Process", selection: binding(\.process)) {
+            Picker("处理版本", selection: binding(\.process)) {
                 ForEach(CameraRawProcessVersion.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            .help("Chooses how strongly the calibration sliders below are applied. Version 6 is the current default.")
+            .help("选择下方校准滑块的应用强度。版本 6 是当前的默认值。")
             Text(raw.calibration.process.summary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .help(raw.calibration.process.summary)
-            Text("Shadows").font(.subheadline)
-            calibrationSlider("Tint", \.shadowTint, help: "Adds green or magenta to the darkest tones.")
-            Text("Red Primary").font(.subheadline)
-            calibrationSlider("Hue", \.redHue, help: "Shifts how red is interpreted.")
-            calibrationSlider("Saturation", \.redSaturation, help: "Strengthens or weakens the red primary.")
-            Text("Green Primary").font(.subheadline)
-            calibrationSlider("Hue", \.greenHue, help: "Shifts how green is interpreted.")
-            calibrationSlider("Saturation", \.greenSaturation, help: "Strengthens or weakens the green primary.")
-            Text("Blue Primary").font(.subheadline)
-            calibrationSlider("Hue", \.blueHue, help: "Shifts how blue is interpreted.")
-            calibrationSlider("Saturation", \.blueSaturation, help: "Strengthens or weakens the blue primary.")
+            Text("阴影").font(.subheadline)
+            calibrationSlider("色调", \.shadowTint, help: "向最暗的色调添加绿色或品红。")
+            Text("红原色").font(.subheadline)
+            calibrationSlider("色相", \.redHue, help: "改变红色的解析方式。")
+            calibrationSlider("饱和度", \.redSaturation, help: "增强或减弱红原色。")
+            Text("绿原色").font(.subheadline)
+            calibrationSlider("色相", \.greenHue, help: "改变绿色的解析方式。")
+            calibrationSlider("饱和度", \.greenSaturation, help: "增强或减弱绿原色。")
+            Text("蓝原色").font(.subheadline)
+            calibrationSlider("色相", \.blueHue, help: "改变蓝色的解析方式。")
+            calibrationSlider("饱和度", \.blueSaturation, help: "增强或减弱蓝原色。")
         }
     }
 

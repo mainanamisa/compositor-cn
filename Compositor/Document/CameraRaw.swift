@@ -3,15 +3,15 @@ import AppKit
 /// White balance on an already-rendered layer. Raw lighting presets are absent: temperature and tint
 /// are relative offsets, not kelvin.
 nonisolated enum CameraRawWhiteBalance: String, CaseIterable, Sendable {
-    case custom = "Custom"
-    case auto = "Auto"
+    case custom = "自定"
+    case auto = "自动"
 }
 
 /// Glow's three looks. Warmth tints Diffusion and Bloom from cool to warm; Halation's fringe stays red.
 nonisolated enum CameraRawGlowStyle: String, CaseIterable, Sendable {
-    case diffusion = "Diffusion"
-    case bloom = "Bloom"
-    case halation = "Halation"
+    case diffusion = "漫射"
+    case bloom = "辉光"
+    case halation = "光晕"
     var kernelValue: Int32 {
         switch self {
         case .diffusion: return 0
@@ -23,9 +23,9 @@ nonisolated enum CameraRawGlowStyle: String, CaseIterable, Sendable {
 
 /// Post-crop vignette. Highlight Priority is the style whose Highlights slider protects bright pixels.
 nonisolated enum CameraRawVignetteStyle: String, CaseIterable, Sendable {
-    case highlightPriority = "Highlight Priority"
-    case colorPriority = "Color Priority"
-    case paintOverlay = "Paint Overlay"
+    case highlightPriority = "高光优先"
+    case colorPriority = "颜色优先"
+    case paintOverlay = "绘画叠加"
     var kernelValue: Int32 {
         switch self {
         case .highlightPriority: return 0
@@ -325,8 +325,8 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
 
 /// Histogram or the vectorscope shown in its place.
 nonisolated enum CameraRawScopeMode: String, Sendable {
-    case histogram = "Histogram"
-    case vectorscope = "Vectorscope"
+    case histogram = "直方图"
+    case vectorscope = "矢量示波器"
 }
 
 /// One RGB histogram and a hue/saturation vectorscope of the same graded pixels.

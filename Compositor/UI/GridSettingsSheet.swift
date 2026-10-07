@@ -52,50 +52,50 @@ struct GridSettingsSheet: View {
 
     @ViewBuilder private var sheet: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Grid").font(.title2.bold())
+            Text("网格").font(.title2.bold())
             HStack {
-                Text("Color").frame(width: 110, alignment: .leading)
-                Picker("Color", selection: $appearance.preset) {
+                Text("颜色").frame(width: 110, alignment: .leading)
+                Picker("颜色", selection: $appearance.preset) {
                     ForEach(GridAppearance.Preset.allCases) { Text($0.rawValue).tag($0) }
                 }.labelsHidden()
-                DialogColorSwatch(title: "Grid Color", color: swatchColor, session: session)
-                    .help("Choose a custom grid color")
+                DialogColorSwatch(title: "网格颜色", color: swatchColor, session: session)
+                    .help("选取自定义网格颜色")
             }
             HStack {
-                Text("Style").frame(width: 110, alignment: .leading)
-                Picker("Style", selection: $appearance.style) {
+                Text("样式").frame(width: 110, alignment: .leading)
+                Picker("样式", selection: $appearance.style) {
                     ForEach(GridAppearance.Style.allCases) { Text($0.rawValue).tag($0) }
                 }.labelsHidden()
             }
             HStack {
-                Text("Opacity").frame(width: 110, alignment: .leading)
+                Text("不透明度").frame(width: 110, alignment: .leading)
                     .scrubbable(sensitivity: 0.5, value: $appearance.opacity, range: GridAppearance.opacityRange)
                 Slider(value: Binding(get: { Double(appearance.opacity) }, set: { appearance.opacity = Int($0.rounded()) }),
                        in: Double(GridAppearance.opacityRange.lowerBound)...Double(GridAppearance.opacityRange.upperBound))
-                TextField("Opacity", value: Binding(get: { appearance.opacity }, set: setOpacity), format: .number)
+                TextField("不透明度", value: Binding(get: { appearance.opacity }, set: setOpacity), format: .number)
                     .frame(width: 48).multilineTextAlignment(.trailing)
                     .arrowSteps(value: { Double(appearance.opacity) }, change: { setOpacity(Int($0.rounded())) })
                     .unitSuffix("%")
             }
             Divider()
             HStack {
-                Text("Gridline every").frame(width: 110, alignment: .leading)
+                Text("网格线间隔").frame(width: 110, alignment: .leading)
                     .scrubbable(sensitivity: 1, value: $spacing, range: LayoutGrid.spacingRange)
-                TextField("Gridline every", value: $spacing, format: .number)
-                Text("pixels").foregroundStyle(.secondary)
+                TextField("网格线间隔", value: $spacing, format: .number)
+                Text("像素").foregroundStyle(.secondary)
             }
             HStack {
-                Text("Subdivisions").frame(width: 110, alignment: .leading)
+                Text("子网格").frame(width: 110, alignment: .leading)
                     .scrubbable(sensitivity: 0.2, value: $subdivisions, range: LayoutGrid.subdivisionRange)
-                TextField("Subdivisions", value: $subdivisions, format: .number)
+                TextField("子网格", value: $subdivisions, format: .number)
             }
-            Text(valid ? "A subdivision every \(Double(grid.step).formatted(.number.precision(.fractionLength(0...2)))) pixels."
-                       : "Use gridlines every \(LayoutGrid.spacingRange.lowerBound)–\(LayoutGrid.spacingRange.upperBound.formatted()) pixels and \(LayoutGrid.subdivisionRange.lowerBound)–\(LayoutGrid.subdivisionRange.upperBound) subdivisions, no more than the pixels between gridlines.")
+            Text(valid ? "每 \(Double(grid.step).formatted(.number.precision(.fractionLength(0...2)))) 像素一条子网格线。"
+                       : "网格线间隔须为 \(LayoutGrid.spacingRange.lowerBound)–\(LayoutGrid.spacingRange.upperBound.formatted()) 像素，子网格数为 \(LayoutGrid.subdivisionRange.lowerBound)–\(LayoutGrid.subdivisionRange.upperBound)，且不超过网格线之间的像素数。")
                 .foregroundStyle(valid ? Color.secondary : Color.orange).font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Cancel") { DialogColorSwatch.closePicker(session); finish(nil) }.configuredNativeShortcut(.escape)
-                Button("Restore Defaults") {
+                Button("取消") { DialogColorSwatch.closePicker(session); finish(nil) }.configuredNativeShortcut(.escape)
+                Button("恢复默认") {
                     spacing = LayoutGrid().spacing
                     subdivisions = LayoutGrid().subdivisions
                     // The Custom color is kept, so it's still there if Custom is chosen again.
@@ -105,7 +105,7 @@ struct GridSettingsSheet: View {
                     appearance.opacity = GridAppearance().opacity
                 }
                 Spacer()
-                Button("OK") {
+                Button("确定") {
                     guard valid else { return }
                     DialogColorSwatch.closePicker(session)
                     finish((grid, appearance))

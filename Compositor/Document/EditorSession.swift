@@ -96,7 +96,7 @@ enum NavigationTool: String, CaseIterable {
     /// Tools that draw and edit selections, sharing modifiers, moving, and nudging.
     var isSelectionTool: Bool { self == .marquee || self == .lasso || self == .wand }
     var symbol: String { self == .type ? "textformat" : self == .eyedropper ? "eyedropper" : self == .marquee ? "rectangle.dashed" : self == .lasso ? "lasso" : self == .wand ? "wand.and.stars" : self == .brush ? "paintbrush.pointed" : self == .spotHealing ? "bandage" : self == .cloneStamp ? "seal" : self == .blur ? "drop" : self == .gradient ? "square.bottomhalf.filled" : self == .shape ? "square.on.circle" : self == .crop ? "crop" : self == .move ? "arrow.up.left.and.arrow.down.right" : self == .hand ? "hand.draw" : "magnifyingglass" }
-    var label: String { self == .type ? "Type (T)" : self == .eyedropper ? "Eyedropper (I)" : self == .marquee ? "Marquee (M)" : self == .lasso ? "Lasso (L)" : self == .wand ? "Magic (W) · Tab switches Wand and Object" : self == .brush ? "Brush (B) · Eraser (E)" : self == .spotHealing ? "Spot Healing Brush (J)" : self == .cloneStamp ? "Clone Stamp (S) · Option-click sets the source" : self == .blur ? "Smear (R)" : self == .gradient ? "Gradient (G)" : self == .shape ? "Shape (U) · Shift-U switches Rectangle/Ellipse" : self == .crop ? "Crop (C)" : self == .move ? "Move / Transform (V)" : self == .hand ? "Hand (H)" : "Zoom (Z)" }
+    var label: String { self == .type ? "文字 (T)" : self == .eyedropper ? "吸管 (I)" : self == .marquee ? "选框 (M)" : self == .lasso ? "套索 (L)" : self == .wand ? "魔棒 (W) · Tab 切换魔棒与对象选择" : self == .brush ? "画笔 (B) · 橡皮擦 (E)" : self == .spotHealing ? "污点修复画笔 (J)" : self == .cloneStamp ? "仿制图章 (S) · Option-点按设置取样源" : self == .blur ? "涂抹 (R)" : self == .gradient ? "渐变 (G)" : self == .shape ? "形状 (U) · Shift-U 切换矩形/椭圆" : self == .crop ? "裁剪 (C)" : self == .move ? "移动 / 变换 (V)" : self == .hand ? "抓手 (H)" : "缩放 (Z)" }
 }
 
 @Observable
@@ -439,7 +439,7 @@ final class EditorSession {
         let carried = selection.reduce(into: Set<UUID>()) { $0.formUnion(descendantIDs(of: $1)) }
         let targets = (document?.layers ?? []).filter { selection.contains($0.id) && !carried.contains($0.id) }.map(\.id)
         guard !targets.isEmpty else { return }
-        beginEdit(targets.count > 1 ? "Duplicate Layers" : "Duplicate Layer")
+        beginEdit(targets.count > 1 ? "复制多个图层" : "复制图层")
         // Stacked as Duplicate Layer stacks them: several together above the topmost original.
         duplicateLayers(targets)
         let copies = selectedLayerIDs.subtracting(selection)
@@ -467,7 +467,7 @@ final class EditorSession {
         if let corners = edit.corners { commitDistort(edit, corners: corners); return }
         if let group = edit.group {
             guard edit.draft.isValid else { return }
-            beginEdit("Transform Layers")
+            beginEdit("变换多个图层")
             for (id, original) in group.originals {
                 guard let index = document?.layers.firstIndex(where: { $0.id == id }) else { continue }
                 let moved = original.following(from: group.box, to: edit.draft)
@@ -482,7 +482,7 @@ final class EditorSession {
             return
         }
         guard edit.draft.isValid, let index = document?.layers.firstIndex(where: { $0.id == edit.layerID }) else { return }
-        beginEdit("Transform Layer")
+        beginEdit("变换图层")
         if let mask = document?.layers[index].mask, let old = document?.layers[index].transform {
             document?.layers[index].mask?.placement = mask.placement(movingLayer: old, to: edit.draft)
         }
@@ -648,8 +648,8 @@ final class EditorSession {
         guard canEditLayers, let document else { return }
         let names = Set(document.layers.map(\.name))
         var number = 1
-        while names.contains("Layer \(number)") { number += 1 }
-        var layer = ImageLayer(name: "Layer \(number)", blankSize: document.size)
+        while names.contains("图层 \(number)") { number += 1 }
+        var layer = ImageLayer(name: "图层 \(number)", blankSize: document.size)
         layer.parentID = activeLayer?.isGroup == true ? activeLayerID : activeLayer?.parentID
         if let parent = layer.parentID { collapsedGroupIDs.remove(parent) }
         var insertion = document.layers.firstIndex { $0.id == activeLayerID }.map { $0 + 1 } ?? document.layers.count
@@ -668,7 +668,7 @@ final class EditorSession {
             }
             if let topmost = document.layers.lastIndex(where: { isInside($0.id) }) { insertion = max(insertion, topmost + 1) }
         }
-        beginEdit("New Blank Layer")
+        beginEdit("新建空白图层")
         defer { endEdit() }
         self.document?.layers.insert(layer, at: insertion)
         activeLayerID = layer.id
@@ -698,14 +698,14 @@ final class EditorSession {
     func renameLayer(_ id: UUID, to name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isProjectBusy, !isImporting, !name.isEmpty, let index = document?.layers.firstIndex(where: { $0.id == id }) else { return }
-        beginEdit("Rename Layer")
+        beginEdit("重命名图层")
         defer { endEdit() }
         document?.layers[index].name = name
     }
 
     func toggleLayerVisibility(_ id: UUID) {
         guard canEditLayers, let index = document?.layers.firstIndex(where: { $0.id == id }) else { return }
-        beginEdit(document?.layers[index].isVisible == true ? "Hide Layer" : "Show Layer")
+        beginEdit(document?.layers[index].isVisible == true ? "隐藏图层" : "显示图层")
         defer { endEdit() }
         document?.layers[index].isVisible.toggle()
     }
@@ -715,7 +715,7 @@ final class EditorSession {
     func beginVisibilitySwipe(_ id: UUID) -> Bool? {
         guard canEditLayers, let layer = document?.layers.first(where: { $0.id == id }) else { return nil }
         let visible = !layer.isVisible
-        beginEdit(visible ? "Show Layer" : "Hide Layer")
+        beginEdit(visible ? "显示图层" : "隐藏图层")
         setVisibilityInSwipe(id, visible: visible)
         return visible
     }
@@ -731,7 +731,7 @@ final class EditorSession {
               offsets.allSatisfy({ layers.indices.contains($0) }), (0...layers.count).contains(destination) else { return }
         // List order is top-to-bottom; the compositor stores bottom-to-top.
         layers.move(fromOffsets: offsets, toOffset: destination)
-        beginEdit("Reorder Layers")
+        beginEdit("调整图层顺序")
         defer { endEdit() }
         document?.layers = layers.reversed()
     }
@@ -748,7 +748,7 @@ final class EditorSession {
         guard let index = siblings.firstIndex(where: { $0.id == activeLayer.id }),
               let a = layers.firstIndex(where: { $0.id == activeLayer.id }),
               let b = layers.firstIndex(where: { $0.id == siblings[index + offset].id }) else { return }
-        beginEdit("Reorder Layers")
+        beginEdit("调整图层顺序")
         document?.layers.swapAt(a, b)
         endEdit()
     }
@@ -781,7 +781,7 @@ final class EditorSession {
         while !pendingImports.isEmpty {
           let request = pendingImports.removeFirst()
           let psdOnly = request.files.allSatisfy { PSDReader.matches($0.0) }
-          beginEdit(psdOnly ? "Import Photoshop File" : "Import Images")
+          beginEdit(psdOnly ? "导入 Photoshop 文件" : "导入图像")
           // No document: the first successful image determines the canvas, regardless of drop point.
           let point = document == nil ? nil : request.point
           for (url, scoped) in request.files {
@@ -808,7 +808,7 @@ final class EditorSession {
                                                                          remainingPixels: DocumentLimits.documentPixelBudget - usedPixels)
                     insert(asset, centeredAt: point)
                 } else if PSDReader.matches(url) {
-                    beginPSDReading(title: "Open “\(url.lastPathComponent)”?", confirmTitle: "Import")
+                    beginPSDReading(title: "打开“\(url.lastPathComponent)”？", confirmTitle: "导入")
                     let imported: PSDImport
                     do {
                         let parsed = try await ImageImporter.shared.loadPhotoshop(url, remainingPixels: DocumentLimits.documentPixelBudget - usedPixels)
@@ -845,7 +845,7 @@ final class EditorSession {
     }
 
     func insert(_ asset: ImportedImage, centeredAt point: CGPoint? = nil) {
-        beginEdit("Import Image")
+        beginEdit("导入图像")
         defer { endEdit() }
         if document == nil {
             document = CanvasDocument(width: asset.image.width, height: asset.image.height)
@@ -908,7 +908,7 @@ final class EditorSession {
     }
 
     func insertPhotoshop(_ imported: PSDImport, named: String, centeredAt point: CGPoint? = nil) throws {
-        beginEdit("Import Photoshop File")
+        beginEdit("导入 Photoshop 文件")
         defer { endEdit() }
         var incoming = imported.layers
         let wrapping = document != nil
@@ -948,10 +948,10 @@ final class EditorSession {
     func createDocument(width: Int, height: Int, emptyLayer: Bool = false) {
         guard !isProjectBusy, !isImporting, (1...DocumentLimits.maxSide).contains(width), (1...DocumentLimits.maxSide).contains(height) else { return }
         commitTransform()
-        beginEdit("New Canvas")
+        beginEdit("新建画布")
         defer { endEdit() }
         var document = CanvasDocument(width: width, height: height)
-        let layer = emptyLayer ? ImageLayer(name: "Layer 1", blankSize: document.size) : nil
+        let layer = emptyLayer ? ImageLayer(name: "图层 1", blankSize: document.size) : nil
         if let layer { document.layers = [layer] }
         self.document = document
         activeLayerID = layer?.id

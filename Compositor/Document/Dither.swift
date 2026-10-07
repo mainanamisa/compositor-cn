@@ -4,17 +4,17 @@ import CoreText
 
 /// Filter › Dither's looks, grouped as the panel's menu lists them. The order matches `DitherPixels.h`.
 nonisolated enum DitherStyle: String, CaseIterable, Sendable {
-    case atkinson = "Atkinson (Classic Mac)"
+    case atkinson = "Atkinson（经典 Mac）"
     case floydSteinberg = "Floyd–Steinberg"
     case bayer2 = "Bayer 2 × 2"
     case bayer4 = "Bayer 4 × 4"
     case bayer8 = "Bayer 8 × 8"
-    case dots = "Halftone Dots"
-    case lines = "Halftone Lines"
-    case diamonds = "Halftone Diamonds"
-    case patterns = "Mac Patterns"
+    case dots = "半调圆点"
+    case lines = "半调直线"
+    case diamonds = "半调菱形"
+    case patterns = "Mac 图案"
     case ascii = "ASCII"
-    case scanlines = "Scanlines (CRT)"
+    case scanlines = "扫描线（CRT）"
 
     static let groups: [[DitherStyle]] = [
         [.atkinson, .floydSteinberg],
@@ -37,14 +37,14 @@ nonisolated enum DitherStyle: String, CaseIterable, Sendable {
 /// How a chunky pixel is drawn: a solid square, or a round dot with the dark color showing around it, like the lit
 /// pixels of a dot-matrix or LED screen.
 nonisolated enum DitherPixelShape: String, CaseIterable, Sendable {
-    case square = "Square"
-    case dot = "Dot"
+    case square = "方形"
+    case dot = "圆点"
 }
 
 nonisolated enum DitherColors: String, CaseIterable, Sendable {
-    case blackWhite = "Black & White"
-    case twoColors = "Two Colors"
-    case original = "Original"
+    case blackWhite = "黑白"
+    case twoColors = "两种颜色"
+    case original = "原始颜色"
 }
 
 nonisolated struct DitherSettings: Equatable, Sendable {

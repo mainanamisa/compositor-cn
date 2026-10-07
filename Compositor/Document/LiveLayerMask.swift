@@ -31,7 +31,7 @@ extension EditorSession {
     @discardableResult func linkMask(source: UUID, target: UUID) -> Bool {
         guard canLinkMask(source: source, target: target), let index = document?.layers.firstIndex(where: { $0.id == target }) else { return false }
         guard document?.layers[index].maskSourceID != source else { return true }
-        beginEdit("Create Clipping Mask")
+        beginEdit("创建剪贴蒙版")
         document?.layers[index].maskSourceID = source
         endEdit()
         return true
@@ -61,7 +61,7 @@ extension EditorSession {
         let releases = siblings[(targetIndex...)]
             .prefix { $0.id == target || $0.maskSourceID == source }
             .map(\.id)
-        beginEdit("Release Clipping Mask")
+        beginEdit("释放剪贴蒙版")
         for id in releases {
             if let index = self.document?.layers.firstIndex(where: { $0.id == id }) {
                 self.document?.layers[index].maskSourceID = nil
@@ -106,11 +106,11 @@ extension EditorSession {
         let targets = (document?.layers ?? []).filter { !removed.contains($0.id) && $0.maskSourceID.map(removed.contains) == true }.map(\.id)
         guard !targets.isEmpty else { return false }
         let alert = NSAlert()
-        alert.messageText = ids.count == 1 ? "This layer supplies a live mask" : "These layers supply live masks"
-        alert.informativeText = "Bake keeps the current masked appearance in the dependent layers’ pixels. Remove Links reveals their pixels. You can undo either choice."
-        alert.addButton(withTitle: "Bake and Delete")
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Remove Links and Delete")
+        alert.messageText = ids.count == 1 ? "此图层为其他图层提供剪贴蒙版" : "这些图层为其他图层提供剪贴蒙版"
+        alert.informativeText = "“烘焙”会把当前蒙版后的外观保留到依赖图层的像素中；“移除链接”会显示它们的原始像素。两种选择都可以撤销。"
+        alert.addButton(withTitle: "烘焙并删除")
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "移除链接并删除")
         let response = alert.runModal()
         if response == .alertThirdButtonReturn { finishDeletingLayers(ids, baked: [:]); return true }
         guard response == .alertFirstButtonReturn, let snapshot = projectSnapshot() else { return true }
@@ -131,7 +131,7 @@ extension EditorSession {
     func finishDeletingLayer(_ id: UUID, baked: [UUID: ImportedImage]) {
         guard let index = document?.layers.firstIndex(where: { $0.id == id }) else { return }
         let removed = descendantIDs(of: id).union([id])
-        beginEdit("Delete Layer")
+        beginEdit("删除图层")
         document?.layers.removeAll { removed.contains($0.id) }
         for i in document?.layers.indices ?? 0..<0 {
             if let source = document?.layers[i].maskSourceID, removed.contains(source) {
@@ -148,7 +148,7 @@ extension EditorSession {
     /// Deletes several layers (a folder with its contents) as one undo step.
     func finishDeletingLayers(_ ids: [UUID], baked: [UUID: ImportedImage]) {
         guard ids.count > 1 else { if let id = ids.first { finishDeletingLayer(id, baked: baked) }; return }
-        beginEdit("Delete Layers")
+        beginEdit("删除图层")
         for id in ids { finishDeletingLayer(id, baked: baked) }
         endEdit()
     }

@@ -34,16 +34,16 @@ struct JPEGExportSheet: View {
     @ViewBuilder private var sheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Text("Export JPEG").font(.title2.bold())
+                Text("导出 JPEG").font(.title2.bold())
                 Spacer()
-                Button("Fit") { zoom = nil }.disabled(zoom == nil)
-                    .help("Show the whole image (⌘0)")
+                Button("适合") { zoom = nil }.disabled(zoom == nil)
+                    .help("显示完整图像（⌘0）")
                 Button { zoomBy(1) } label: { Image(systemName: "plus.magnifyingglass") }
                     .disabled(JPEGPreview.step(from: shownZoom, in: 1) == nil)
-                    .help("Zoom in (⌘+), now \(percent). At 100% each pixel of the JPEG is one pixel of the screen, as on the canvas")
+                    .help("放大（⌘+），当前 \(percent)。100% 时 JPEG 的每个像素对应屏幕的一个像素，与画布一致")
                 Button { zoomBy(-1) } label: { Image(systemName: "minus.magnifyingglass") }
                     .disabled(JPEGPreview.step(from: shownZoom, in: -1) == nil)
-                    .help("Zoom out (⌘−), now \(percent)")
+                    .help("缩小（⌘−），当前 \(percent)")
             }
             // Closer to the title row than the rest of the dialog's spacing.
             .padding(.bottom, -8)
@@ -56,28 +56,28 @@ struct JPEGExportSheet: View {
                     ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
             }.frame(width: JPEGPreview.frame.width, height: JPEGPreview.frame.height).clipped()
-                .help("Drag or scroll to move around; double-click switches between Fit and 100%")
+                .help("拖动或滚动以移动视图；双击在“适合”和 100% 之间切换")
             HStack {
-                Text("Quality")
+                Text("质量")
                 Slider(value: $options.quality, in: 0...1, step: 0.01)
                 Text("\(Int((options.quality * 100).rounded()))%")
                     .monospacedDigit().frame(width: 45, alignment: .trailing)
             }
             HStack(spacing: 8) {
-                Text("Background for transparency")
-                DialogColorSwatch(title: "JPEG Background", color: matte, session: session)
-                    .help("Color that fills transparent areas")
+                Text("透明区域背景色")
+                DialogColorSwatch(title: "JPEG 背景色", color: matte, session: session)
+                    .help("用于填充透明区域的颜色")
             }
             HStack(spacing: 12) {
-                Text("\(raster.image.width.formatted()) × \(raster.image.height.formatted()) px · sRGB")
+                Text("\(raster.image.width.formatted()) × \(raster.image.height.formatted()) 像素 · sRGB")
                     .foregroundStyle(.secondary)
                 Spacer()
                 if let error { Text(error).foregroundStyle(.red) }
                 else if readyOptions == options, let result {
                     Text(ByteCountFormatter.string(fromByteCount: Int64(result.data.count), countStyle: .file)).monospacedDigit()
-                } else { Text("Updating…").foregroundStyle(.secondary) }
-                Button("Cancel") { DialogColorSwatch.closePicker(session); finish(nil) }.configuredNativeShortcut(.escape)
-                Button("Export…") {
+                } else { Text("正在更新…").foregroundStyle(.secondary) }
+                Button("取消") { DialogColorSwatch.closePicker(session); finish(nil) }.configuredNativeShortcut(.escape)
+                Button("导出…") {
                     DialogColorSwatch.closePicker(session)
                     UserDefaults.standard.set(options.quality, forKey: Self.qualityKey)
                     finish(result?.data)

@@ -1,9 +1,9 @@
 import AppKit
 
 nonisolated enum SpotHealingMode: String, CaseIterable, Sendable, Hashable {
-    case contentAware = "Content-Aware"
-    case createTexture = "Create Texture"
-    case proximityMatch = "Proximity Match"
+    case contentAware = "内容识别"
+    case createTexture = "创建纹理"
+    case proximityMatch = "近似匹配"
 }
 
 nonisolated struct BrushSettings: Sendable {

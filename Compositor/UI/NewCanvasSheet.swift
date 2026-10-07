@@ -18,12 +18,12 @@ struct NewCanvasSheet: View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(spacing: 14) {
                 HStack {
-                    Text("New canvas").font(.title2.weight(.semibold))
+                    Text("新建画布").font(.title2.weight(.semibold))
                     Spacer()
                     // Preset sizes, tucked into a More button; the size in use is checked.
                     Menu {
-                        Picker("Size", selection: preset) {
-                            Text("Custom").tag(CanvasPreset?.none)
+                        Picker("尺寸", selection: preset) {
+                            Text("自定义").tag(CanvasPreset?.none)
                             ForEach(CanvasPreset.groups.indices, id: \.self) { group in
                                 Divider()
                                 ForEach(CanvasPreset.groups[group]) { Text($0.title).tag(CanvasPreset?.some($0)) }
@@ -42,22 +42,22 @@ struct NewCanvasSheet: View {
                             .padding(.trailing, -10)
                     }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                    .help("Preset sizes for screens and common formats")
-                    .accessibilityLabel("Preset sizes")
+                    .help("屏幕与常见格式的预设尺寸")
+                    .accessibilityLabel("预设尺寸")
                 }
             }
             HStack(spacing: 16) {
-                dimension("Width", text: $width, field: .width)
+                dimension("宽度", text: $width, field: .width)
                 Image(systemName: "multiply").foregroundStyle(.tertiary).padding(.top, 20)
-                dimension("Height", text: $height, field: .height)
+                dimension("高度", text: $height, field: .height)
             }
-            Text(valid ? "Transparent canvas · sRGB" : "Enter whole numbers from 1 to \(DocumentLimits.maxSide.formatted()) pixels.")
+            Text(valid ? "透明画布 · sRGB" : "请输入 1 到 \(DocumentLimits.maxSide.formatted()) 之间的整数像素。")
                 .font(.callout).foregroundStyle(valid ? Color.secondary : Color.orange)
             HStack(spacing: 10) {
-                Button("Open project") { onOpen?() }.buttonStyle(.bordered)
-                Button("Import image") { session.showsImporter = true }.buttonStyle(.bordered)
+                Button("打开项目") { onOpen?() }.buttonStyle(.bordered)
+                Button("导入图像") { session.showsImporter = true }.buttonStyle(.bordered)
                 Spacer()
-                Button("Create canvas") {
+                Button("创建画布") {
                     guard let w = CanvasDocument.validDimension(width),
                           let h = CanvasDocument.validDimension(height) else { return }
                     if let onCreate { onCreate(w, h) }
@@ -139,10 +139,10 @@ struct CanvasPreset: Identifiable, Hashable {
             CanvasPreset(title: "Studio Display", width: 5120, height: 2880),
         ],
         [
-            CanvasPreset(title: "Instagram Square", width: 1080, height: 1080),
-            CanvasPreset(title: "Instagram Portrait", width: 1080, height: 1350),
-            CanvasPreset(title: "Instagram Story", width: 1080, height: 1920),
-            CanvasPreset(title: "YouTube Thumb", width: 1080, height: 608),
+            CanvasPreset(title: "Instagram 方形", width: 1080, height: 1080),
+            CanvasPreset(title: "Instagram 竖向", width: 1080, height: 1350),
+            CanvasPreset(title: "Instagram 快拍", width: 1080, height: 1920),
+            CanvasPreset(title: "YouTube 缩略图", width: 1080, height: 608),
         ],
     ]
     static let all = groups.flatMap { $0 }

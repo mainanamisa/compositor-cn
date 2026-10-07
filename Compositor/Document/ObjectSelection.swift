@@ -18,8 +18,8 @@ nonisolated enum ObjectSelection {
 
         var errorDescription: String? {
             switch self {
-            case .unsupported: "Object Selection requires macOS 14 or later."
-            case .render: "The object mask could not be rendered."
+            case .unsupported: "对象选择需要 macOS 14 或更高版本。"
+            case .render: "无法渲染对象蒙版。"
             }
         }
     }
@@ -290,9 +290,9 @@ extension EditorSession {
             return
         }
         if mode == .replace {
-            setSelection(DocumentSelection(path: path, antialiased: selectionAntialiased), name: "Object Selection")
+            setSelection(DocumentSelection(path: path, antialiased: selectionAntialiased), name: "对象选择")
         } else {
-            applySelection(path, mode: mode, name: "Object Selection")
+            applySelection(path, mode: mode, name: "对象选择")
         }
     }
 }

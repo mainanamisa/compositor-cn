@@ -8,15 +8,15 @@ struct TransformInspector: View {
     }
     var body: some View {
         HStack(spacing: 12) {
-          Text(session.transformTargetsMask ? "Transform Mask" : "Transform").font(ToolHeaderStyle.titleFont)
+          Text(session.transformTargetsMask ? "变换蒙版" : "变换").font(ToolHeaderStyle.titleFont)
               .padding(.leading, 18)
           // Command flips Auto Select while it's held, and the box shows it flipped (see HeldModifiers).
-          Toggle("Auto Select", isOn: Binding(get: { session.transformAutoSelect != held.contains(.command) },
+          Toggle("自动选择", isOn: Binding(get: { session.transformAutoSelect != held.contains(.command) },
                                               set: { session.transformAutoSelect = $0 != held.contains(.command) }))
-              .help("Select layers by clicking the canvas. Hold Command to turn it the other way while you click.")
+              .help("点按画布即可选择图层。点按时按住 Command 可临时反转此行为。")
               .accessibilityIdentifier("transformAutoSelect")
-          Toggle("Show Controls", isOn: $session.showsTransformControls)
-              .help("Show the transform box and handles (⌘H). When hidden, drag anywhere to move the layer.")
+          Toggle("显示控件", isOn: $session.showsTransformControls)
+              .help("显示变换框与控制手柄 (⌘H)。隐藏后，可在任意位置拖动以移动图层。")
           ScrollView(.horizontal) {
             HStack(spacing: 12) {
                 field("X", value: value.origin.x) { $0.origin.x = $1 }.frame(width: 85)
@@ -26,21 +26,21 @@ struct TransformInspector: View {
                 // Shift flips the lock while dragging a handle, and the button shows it flipped.
                 Toggle(isOn: Binding(get: { session.locksTransformRatio != held.contains(.shift) },
                                      set: { session.locksTransformRatio = $0 != held.contains(.shift) })) { Image(systemName: "link") }
-                    .toggleStyle(.button).help("Lock aspect ratio. Hold Shift while dragging a handle to turn it the other way.")
-                TransformValueField(label: "Scale", suffix: "%", value: value.scalePercent(pixelSize: pixelSize), range: 0.1...30_000, finish: finish) { number in
+                    .toggleStyle(.button).help("锁定宽高比。拖动手柄时按住 Shift 可临时反转。")
+                TransformValueField(label: "缩放", suffix: "%", value: value.scalePercent(pixelSize: pixelSize), range: 0.1...30_000, finish: finish) { number in
                     change { value in
                         guard number > 0 else { return }
                         value = value.scaled(toPercent: number, pixelSize: pixelSize)
                     }
-                }.frame(width: 110).help("Scale width and height together, about the center")
+                }.frame(width: 110).help("以中心为基准，同时缩放宽度与高度")
                 field("°", value: value.rotation, range: -360...360) { $0.rotation = $1.truncatingRemainder(dividingBy: 360) }.frame(width: 75)
-                Picker("Sampling", selection: Binding(get: { value.sampling }, set: { sampling in
+                Picker("采样", selection: Binding(get: { value.sampling }, set: { sampling in
                     change { $0.sampling = sampling }
                 })) {
-                    ForEach(LayerSampling.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(LayerSampling.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }.frame(width: 170)
-                Button("Flip H") { change { $0.flipX.toggle() } }
-                Button("Flip V") { change { $0.flipY.toggle() } }
+                Button("水平翻转") { change { $0.flipX.toggle() } }
+                Button("垂直翻转") { change { $0.flipY.toggle() } }
 
             // Numbers describe an ordinary transform; while distorted, the handles are the controls.
             }.disabled((!session.canTransform && session.transformEdit == nil) || session.transformEdit?.corners != nil)
@@ -51,9 +51,9 @@ struct TransformInspector: View {
           // which they never are. Left in place unseen, so Escape and Return still reach a drag in progress.
           let pending = session.transformEdit?.persistent == true
           HStack(spacing: 12) {
-              Button("Cancel") { session.cancelTransform() }.configuredNativeShortcut(.escape)
+              Button("取消") { session.cancelTransform() }.configuredNativeShortcut(.escape)
                   .disabled(session.transformEdit == nil)
-              Button("Apply") { session.commitTransform() }.configuredNativeShortcut(.return)
+              Button("应用") { session.commitTransform() }.configuredNativeShortcut(.return)
                   .disabled(session.transformEdit == nil).accessibilityIdentifier("applyTransform")
           }
           .opacity(pending ? 1 : 0).allowsHitTesting(pending).accessibilityHidden(!pending)
@@ -141,5 +141,15 @@ private struct TransformValueField: View {
     /// No trailing zeros on a whole number, two decimals otherwise.
     static func formatted(_ value: Double) -> String {
         abs(value - value.rounded()) < 0.005 ? String(Int(value.rounded())) : String(format: "%.2f", value)
+    }
+}
+
+private extension LayerSampling {
+    var displayName: String {
+        switch self {
+        case .nearest: return "邻近"
+        case .smooth: return "平滑"
+        case .high: return "高质量"
+        }
     }
 }

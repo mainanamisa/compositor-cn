@@ -27,7 +27,7 @@ enum ImageFileDrop {
         else if let projects { await projects.receive(urls, at: point) }
         else { await session.importImages(urls, at: point) }
         if unreadable, !providers.isEmpty {
-            let message = "Some dropped items couldn’t be read. Drag JPEG, PNG, HEIC, TIFF, or Photoshop (PSD) files from Finder."
+            let message = "部分拖放的项目无法读取。请从访达拖入 JPEG、PNG、HEIC、TIFF 或 Photoshop（PSD）文件"
             session.importError = [session.importError, message].compactMap { $0 }.joined(separator: "\n\n")
         }
     }
@@ -47,7 +47,7 @@ enum ImageFileDrop {
                 let folder = FileManager.default.temporaryDirectory
                     .appendingPathComponent(UUID().uuidString, isDirectory: true)
                 let copy = folder
-                    .appendingPathComponent(name.isEmpty ? "Dropped" : name)
+                    .appendingPathComponent(name.isEmpty ? "拖放图像" : name)
                     .appendingPathExtension(suffix)
                 do {
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

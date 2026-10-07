@@ -13,21 +13,21 @@ extension EditorSession {
     /// nothing about the target is in the way; while the editor is busy (a transform, a dialog) a press just waits.
     var paintRefusal: String? {
         guard canEditLayers, let layer = activeLayer, !canPaint else { return nil }
-        if selectedLayerIDs.count > 1 { return "Several layers are selected. Select just one to paint on it." }
+        if selectedLayerIDs.count > 1 { return "选中了多个图层，请只选中一个图层再绘制" }
         if layer.isGroup, !isMaskSelected {
-            return "“\(layer.name)” is a folder, which has no pixels of its own. Paint on a layer inside it, or on the folder’s mask."
+            return "“\(layer.name)”是一个组，本身没有像素。请在组内的图层上绘制，或在组的蒙版上绘制"
         }
         if document?.effectiveVisibleIDs.contains(layer.id) != true {
-            return "“\(layer.name)” is hidden, or inside a hidden folder. Show it to paint on it."
+            return "“\(layer.name)”已隐藏，或位于已隐藏的组内。请将其显示后再绘制"
         }
         if isMaskSelected, layer.mask?.isEnabled != true {
-            return "The layer mask is turned off. Shift-click its thumbnail to turn it on, then paint."
+            return "图层蒙版已停用。请按住 Shift 点按其缩略图启用，然后再绘制"
         }
         if !isMaskSelected, layer.adjustment != nil {
-            return "“\(layer.name)” is an adjustment layer, with no pixels to paint. Paint on its mask instead."
+            return "“\(layer.name)”是调整图层，没有可绘制的像素。请改为在其蒙版上绘制"
         }
         if selection?.isEmpty == true {
-            return "Nothing is selected, so there’s nowhere to paint. Choose Select › Deselect (⌘D) to paint anywhere."
+            return "选区为空，无处可以绘制。选择“选择 › 取消选择”(⌘D) 后可在任意位置绘制"
         }
         return nil
     }
@@ -55,7 +55,7 @@ extension EditorSession {
         var sourceOffset: CGSize?
         if tool == .cloneStamp {
             guard let offset = cloneStrokeOffset(at: point) else {
-                brushError = "Option-click where Clone Stamp should copy from first."
+                brushError = "请先按住 Option 点按仿制图章要拷贝的取样源"
                 return
             }
             sourceOffset = offset
@@ -164,7 +164,7 @@ extension EditorSession {
             mask = original.replacing(ImportedImage(image: try raster.makeImage(), thumbnail: try raster.thumbnail(),
                 name: original.asset.name, raster: raster))
         }
-        beginEdit(stroke.editName ?? (stroke.isMask ? "Paint Mask" : stroke.settings.erasing ? "Erase" : stroke.isBlur ? "Blur" : stroke.clone != nil ? "Clone Stamp" : stroke.settings.healing ? "Spot Healing" : "Brush Stroke"))
+        beginEdit(stroke.editName ?? (stroke.isMask ? "绘制蒙版" : stroke.settings.erasing ? "橡皮擦" : stroke.isBlur ? "模糊" : stroke.clone != nil ? "仿制图章" : stroke.settings.healing ? "污点修复" : "画笔"))
         if stroke.isMask {
             document?.layers[index].mask = current.mask.map { mask in
                 var painted = mask.replacing(result.asset)

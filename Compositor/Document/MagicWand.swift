@@ -2,7 +2,7 @@ import AppKit
 
 nonisolated enum WandSampleSize: Int, CaseIterable, Sendable {
     case point, threeByThree, fiveByFive
-    var title: String { ["Point Sample", "3 by 3 Average", "5 by 5 Average"][rawValue] }
+    var title: String { ["点取样", "3×3 平均", "5×5 平均"][rawValue] }
     /// Pixels either side of the click that are averaged into the color to match.
     var radius: Int { rawValue }
 }
@@ -25,8 +25,8 @@ nonisolated enum MagicWand {
         case tooDetailed, memory
         var errorDescription: String? {
             switch self {
-            case .tooDetailed: "That selection is too detailed to outline. Try a different Tolerance, or turn on Contiguous."
-            case .memory: "There isn’t enough memory to make that selection."
+            case .tooDetailed: "该选区过于复杂，无法描边。请尝试其他容差，或开启“连续”。"
+            case .memory: "内存不足，无法创建该选区。"
             }
         }
     }
@@ -116,9 +116,9 @@ extension EditorSession {
         // A traced outline already lies on the canvas, so a new selection skips the clip to
         // the canvas, which is costly for a detailed outline.
         if mode == .replace {
-            setSelection(DocumentSelection(path: path, antialiased: selectionAntialiased), name: "Magic Wand")
+            setSelection(DocumentSelection(path: path, antialiased: selectionAntialiased), name: "魔棒")
         } else {
-            applySelection(path, mode: mode, name: "Magic Wand")
+            applySelection(path, mode: mode, name: "魔棒")
         }
     }
 

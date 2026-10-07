@@ -10,9 +10,9 @@ struct LayerMaskMenu: View {
             session.addMask(revealing: NSApp.currentEvent?.modifierFlags.contains(.option) != true)
         } label: { Image(systemName: "rectangle.inset.filled").footerHitArea() }
             .buttonStyle(.borderless)
-            .help(session.selection == nil ? "Add layer mask (Option-click for a black mask)"
-                  : "Add layer mask revealing the selection (Option-click to hide it)")
-            .accessibilityLabel("Add layer mask")
+            .help(session.selection == nil ? "添加图层蒙版（Option 点击添加黑色蒙版）"
+                  : "添加显示选区的图层蒙版（Option 点击隐藏选区）")
+            .accessibilityLabel("添加图层蒙版")
             .disabled(!session.canEditMask || session.activeLayer?.mask != nil)
     }
 }
@@ -38,17 +38,17 @@ final class MaskAloneBadgeView: NSView {
         self.close = close
         let icon = NSImageView(image: NSImage(systemSymbolName: "rectangle.inset.filled", accessibilityDescription: nil) ?? NSImage())
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        let title = NSTextField(labelWithString: "Layer Mask")
+        let title = NSTextField(labelWithString: "图层蒙版")
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         title.textColor = .white
         name.font = .systemFont(ofSize: 12)
         name.textColor = NSColor.white.withAlphaComponent(0.6)
         name.lineBreakMode = .byTruncatingTail
-        let button = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Stop viewing the mask") ?? NSImage(),
+        let button = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "停止查看蒙版") ?? NSImage(),
                               target: nil, action: nil)
         button.isBordered = false
         button.symbolConfiguration = .init(pointSize: 9, weight: .bold)
-        button.toolTip = "Show the image again (or Option-click the mask thumbnail)"
+        button.toolTip = "重新显示图像（或 Option 点击蒙版缩略图）"
         stack = NSStackView(views: [icon, title, name, button])
         stack.spacing = 7
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 11, bottom: 0, right: 8)

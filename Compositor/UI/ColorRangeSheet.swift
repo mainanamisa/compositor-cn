@@ -15,32 +15,32 @@ struct ColorRangeSheet: View {
                         .background(edit?.effectiveMode == mode ? Color.accentColor.opacity(0.25) : .clear,
                                     in: RoundedRectangle(cornerRadius: 4))
                         .help(help(mode))
-                        .accessibilityLabel("\(mode.rawValue) color")
+                        .accessibilityLabel("\(mode.rawValue) 颜色")
                 }
                 Spacer()
             }
             preview
-            Text(edit?.hasColors == true ? "Shift-click adds a color, Option-click takes one away."
-                                         : "Click the image to pick the color to select.")
+            Text(edit?.hasColors == true ? "按住 Shift 点按可添加颜色，按住 Option 点按可减去颜色。"
+                                         : "点按图像以选取要选择的颜色。")
                 .font(.callout).foregroundStyle(.secondary)
             HStack(spacing: 10) {
-                Text("Fuzziness").fixedSize()
+                Text("颜色容差").fixedSize()
                     .scrubbable(sensitivity: 1, value: fuzziness, range: ColorRangeEdit.fuzzinessRange)
                 Slider(value: fuzziness, in: ColorRangeEdit.fuzzinessRange)
-                TextField("Fuzziness", value: fuzziness, format: .number.precision(.fractionLength(0)))
+                TextField("颜色容差", value: fuzziness, format: .number.precision(.fractionLength(0)))
                     .frame(width: 48).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
             }
-            .help("How far a color may be from the picked ones and still be selected")
-            Toggle("Invert", isOn: Binding(get: { edit?.invert ?? false }, set: { edit?.invert = $0; session.updateColorRange() }))
-                .help("Select everything except those colors, such as all but a green screen")
+            .help("颜色与已选取颜色相差多远仍会被选中")
+            Toggle("反相", isOn: Binding(get: { edit?.invert ?? false }, set: { edit?.invert = $0; session.updateColorRange() }))
+                .help("选择这些颜色以外的所有内容，例如绿幕之外的全部区域")
             if let error = edit?.error {
                 Text(error).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
             HStack {
-                Button("Cancel") { session.cancelColorRange() }.configuredNativeShortcut(.escape)
+                Button("取消") { session.cancelColorRange() }.configuredNativeShortcut(.escape)
                 Spacer()
-                Button("OK") { session.commitColorRange() }
+                Button("确定") { session.commitColorRange() }
                     .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
             }
         }
@@ -72,9 +72,9 @@ struct ColorRangeSheet: View {
 
     private func help(_ mode: HueSampleMode) -> String {
         switch mode {
-        case .replace: "Click the image to select that color"
-        case .add: "Click the image to add that color to the selection"
-        case .remove: "Click the image to take that color out of the selection"
+        case .replace: "点按图像以选择该颜色"
+        case .add: "点按图像以将该颜色添加到选区"
+        case .remove: "点按图像以将该颜色从选区中减去"
         }
     }
 

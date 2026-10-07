@@ -24,13 +24,13 @@ struct PSDConversionSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(request.title).font(.title2.bold())
-            Text(request.isReading ? "Reading the file to see what needs converting."
-                 : "Compositor will convert these Photoshop features. Nothing is applied until you continue.")
+            Text(request.isReading ? "正在读取文件，查看需要转换的内容。"
+                 : "Compositor 将转换以下 Photoshop 功能。在你继续之前不会应用任何更改。")
                 .foregroundStyle(.secondary)
             if request.isReading {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
-                    Text("Reading the Photoshop file…").foregroundStyle(.secondary)
+                    Text("正在读取 Photoshop 文件…").foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 180)
             } else {
@@ -44,7 +44,7 @@ struct PSDConversionSheet: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel") { finish(false) }.keyboardShortcut(.cancelAction)
+                Button("取消") { finish(false) }.keyboardShortcut(.cancelAction)
                 Button(request.confirmTitle) { finish(true) }.keyboardShortcut(.defaultAction)
                     .disabled(request.isReading)
             }

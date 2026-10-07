@@ -10,12 +10,12 @@ struct BlendModePicker: NSViewRepresentable {
         // with a line between, so a long list stays readable.
         for (index, group) in LayerBlendMode.groups.enumerated() {
             if index > 0 { button.menu?.addItem(.separator()) }
-            for mode in group { button.addItem(withTitle: mode.rawValue) }
+            for mode in group { button.addItem(withTitle: Self.title(for: mode)) }
         }
         button.menu?.delegate = context.coordinator
         button.target = context.coordinator
         button.action = #selector(Coordinator.choose(_:))
-        button.setAccessibilityLabel("Blend mode")
+        button.setAccessibilityLabel("混合模式")
         // A capsule like the SwiftUI buttons and menus (`roundedControls`), which don't reach this AppKit pop-up.
         button.borderShape = .capsule
         return button
@@ -23,7 +23,7 @@ struct BlendModePicker: NSViewRepresentable {
     func updateNSView(_ button: NSPopUpButton, context: Context) {
         button.isEnabled = session.canEditAppearance
         if !context.coordinator.tracking {
-            button.selectItem(withTitle: (session.activeLayer?.blendMode ?? .normal).rawValue)
+            button.selectItem(withTitle: Self.title(for: session.activeLayer?.blendMode ?? .normal))
         }
     }
     static func dismantleNSView(_ button: NSPopUpButton, coordinator: Coordinator) {
@@ -45,7 +45,7 @@ struct BlendModePicker: NSViewRepresentable {
             // AppKit briefly reports no highlighted item while dismissing the menu.
             // Keep the last preview alive until the selection action has committed so
             // the canvas never flashes back to the layer's previous mode.
-            guard let mode = item.flatMap({ LayerBlendMode(rawValue: $0.title) }) else { return }
+            guard let mode = item.flatMap({ BlendModePicker.mode(forTitle: $0.title) }) else { return }
             highlightedMode = mode
             session.previewBlendMode(mode, for: layerID)
         }
@@ -61,11 +61,45 @@ struct BlendModePicker: NSViewRepresentable {
         }
         @objc func choose(_ button: NSPopUpButton) {
             guard session.activeLayerID == layerID,
-                  let mode = highlightedMode ?? button.selectedItem.flatMap({ LayerBlendMode(rawValue: $0.title) }) else { return }
+                  let mode = highlightedMode ?? button.selectedItem.flatMap({ BlendModePicker.mode(forTitle: $0.title) }) else { return }
             session.setLayerBlendMode(mode)
-            button.selectItem(withTitle: mode.rawValue)
+            button.selectItem(withTitle: BlendModePicker.title(for: mode))
             highlightedMode = nil
             session.refreshCanvasPreview?()
         }
+    }
+
+    /// Chinese menu titles. The raw values stay English: `LayerBlendMode` is Codable and written
+    /// into project files, so only the display text is translated here.
+    static func title(for mode: LayerBlendMode) -> String {
+        switch mode {
+        case .normal: return "正常"
+        case .darken: return "变暗"
+        case .multiply: return "正片叠底"
+        case .colorBurn: return "颜色加深"
+        case .linearBurn: return "线性加深"
+        case .lighten: return "变亮"
+        case .screen: return "滤色"
+        case .colorDodge: return "颜色减淡"
+        case .linearDodge: return "线性减淡（添加）"
+        case .overlay: return "叠加"
+        case .softLight: return "柔光"
+        case .hardLight: return "强光"
+        case .vividLight: return "亮光"
+        case .linearLight: return "线性光"
+        case .pinLight: return "点光"
+        case .hardMix: return "实色混合"
+        case .difference: return "差值"
+        case .exclusion: return "排除"
+        case .subtract: return "减去"
+        case .divide: return "划分"
+        case .hue: return "色相"
+        case .saturation: return "饱和度"
+        case .color: return "颜色"
+        case .luminosity: return "明度"
+        }
+    }
+    static func mode(forTitle title: String) -> LayerBlendMode? {
+        LayerBlendMode.allCases.first { self.title(for: $0) == title }
     }
 }

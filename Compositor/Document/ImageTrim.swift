@@ -45,9 +45,9 @@ public enum TrimError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .noContentToTrim:
-            return "No content remained after trimming."
+            return "裁剪后没有剩余内容"
         case .invalidDimensions:
-            return "The trimmed image dimensions are invalid."
+            return "裁剪后的图像尺寸无效"
         }
     }
 }
@@ -204,7 +204,7 @@ extension EditorSession {
         guard let trimmedSnapshot = try await ImageTrim.trim(snapshot, options: options) else {
             return false
         }
-        applyDocumentSize(trimmedSnapshot, actionName: "Trim")
+        applyDocumentSize(trimmedSnapshot, actionName: "裁切")
         return true
     }
 }

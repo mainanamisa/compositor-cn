@@ -147,12 +147,12 @@ extension EditorSession {
         guard canPaste, let document else { return }
         let pasteboard = NSPasteboard.general
         if let clip = pixelClipboard, pasteboard.changeCount == clip.changeCount {
-            addPixelLayer(clip.image, at: clip.origin, name: nextLayerName(), editName: "Paste")
+            addPixelLayer(clip.image, at: clip.origin, name: nextLayerName(), editName: "粘贴")
         } else if let external = NSImage(pasteboard: pasteboard)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
                   let image = try? Self.sRGBCopy(of: external) {
             let origin = CGPoint(x: floor((document.size.width - CGFloat(image.width)) / 2),
                                  y: floor((document.size.height - CGFloat(image.height)) / 2))
-            addPixelLayer(image, at: origin, name: nextLayerName(), editName: "Paste")
+            addPixelLayer(image, at: origin, name: nextLayerName(), editName: "粘贴")
         } else { NSSound.beep() }
     }
 
@@ -165,7 +165,7 @@ extension EditorSession {
         guard !layer.isGroup else { return }
         do {
             guard let copied = try renderSelectedPixels(from: layer, mask: isMaskSelected) else { NSSound.beep(); return }
-            addPixelLayer(copied.image, at: copied.region.origin, name: nextLayerName(), editName: "Layer via Copy")
+            addPixelLayer(copied.image, at: copied.region.origin, name: nextLayerName(), editName: "通过拷贝的图层")
         } catch { brushError = error.localizedDescription }
     }
 
@@ -184,7 +184,7 @@ extension EditorSession {
     /// A copy of each layer (a folder with all it holds), as one undo step: Duplicate Layer, and Paste of layers Copy
     /// took whole. One copy sits just above its original; several stack together, in their order, above the topmost
     /// original, as Photoshop's do. The copies end up selected.
-    func duplicateLayers(_ ids: [UUID], editName: String = "Duplicate Layer") {
+    func duplicateLayers(_ ids: [UUID], editName: String = "复制图层") {
         guard canEditLayers, !ids.isEmpty else { return }
         let active = activeLayerID
         beginEdit(editName)
@@ -219,7 +219,7 @@ extension EditorSession {
         let mapping = Dictionary(uniqueKeysWithValues: originals.map { ($0.id, UUID()) })
         let copies = originals.map { original in
             ImageLayer(id: mapping[original.id]!, asset: original.asset,
-                name: original.name + (original.id == layer.id ? " copy" : ""), isVisible: original.isVisible,
+                name: original.name + (original.id == layer.id ? " 副本" : ""), isVisible: original.isVisible,
                 transform: original.transform, parentID: original.parentID.map { mapping[$0] ?? $0 },
                 isGroup: original.isGroup, opacity: original.opacity, blendMode: original.blendMode,
                 mask: original.mask, maskSourceID: original.maskSourceID.map { mapping[$0] ?? $0 },
@@ -238,7 +238,7 @@ extension EditorSession {
     func duplicateLayer(_ id: UUID, in parent: UUID?, above target: UUID? = nil, atBottom: Bool = false) -> Bool {
         guard canEditLayers,
               canPlaceLayer(id, in: parent) else { return false }
-        beginEdit("Duplicate Layer")
+        beginEdit("复制图层")
         defer { endEdit() }
         selectLayer(id)
         duplicateActiveLayer()
@@ -267,8 +267,8 @@ extension EditorSession {
     func nextLayerName() -> String {
         let names = Set(document?.layers.map(\.name) ?? [])
         var number = 1
-        while names.contains("Layer \(number)") { number += 1 }
-        return "Layer \(number)"
+        while names.contains("图层 \(number)") { number += 1 }
+        return "图层 \(number)"
     }
 
     /// Normalizes an image from another app to the working sRGB RGBA format.

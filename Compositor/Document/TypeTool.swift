@@ -5,7 +5,7 @@ nonisolated enum TextAlignment: String, Codable, CaseIterable, Sendable {
 }
 
 nonisolated struct LayerTextStyle: Codable, Equatable, Sendable {
-    var content = "Text"
+    var content = "文字"
     var fontName = "Helvetica"
     var fontSize: CGFloat = 72
     var red: CGFloat = 0
@@ -298,14 +298,14 @@ extension EditorSession {
                     transform.origin.y += anchor.y - moved.y
                 }
                 guard transform.isValid else { throw ProjectError.tooLarge }
-                beginEdit("Edit Text")
+                beginEdit("编辑文字")
                 if layer.mask?.placement == nil { document?.layers[index].mask?.placement = layer.maskTransform }
                 document?.layers[index].asset = ImportedImage(image: image, thumbnail: thumbnail, name: asset.name)
                 document?.layers[index].text = text
                 document?.layers[index].transform = transform
                 endEdit()
             } else {
-                addPixelLayer(image, at: draft.origin, name: Self.layerName(for: draft.style.content), editName: "New Text Layer",
+                addPixelLayer(image, at: draft.origin, name: Self.layerName(for: draft.style.content), editName: "新建文字图层",
                               dropsSelection: false, text: text)
             }
             succeeded = true
@@ -333,7 +333,7 @@ extension EditorSession {
         guard canEditLayers, textDraft == nil, rect.width.isFinite, rect.height.isFinite else { return }
         var style = textDefaults
         style.boxSize = CGSize(width: max(16, rect.width.rounded()), height: max(16, rect.height.rounded()))
-        guard style.boxIsValid else { brushError = "That text box exceeds the \(DocumentLimits.maxSide.formatted())-pixel or \(DocumentLimits.maxSurfaceMegapixels)-megapixel limit."; return }
+        guard style.boxIsValid else { brushError = "该文本框超出了 \(DocumentLimits.maxSide.formatted()) 像素边长或 \(DocumentLimits.maxSurfaceMegapixels) 百万像素的限制。"; return }
         beginText(at: rect.origin, newLayer: true)
         // A dragged box is exactly where it was drawn.
         textDraft?.origin = rect.origin
@@ -351,7 +351,7 @@ extension EditorSession {
         style.setColor(color, in: NSRange(location: 0, length: 0))
         guard style.isValid, let image = try? Self.textImage(style), let thumbnail = try? PixelInvert.thumbnail(of: image) else { return false }
         finishOpacityEdit()
-        beginEdit("Fill Text")
+        beginEdit("填充文字")
         document?.layers[index].asset = ImportedImage(image: image, thumbnail: thumbnail, name: asset.name)
         document?.layers[index].text = LayerText(style: style, image: image)
         endEdit()
@@ -397,7 +397,7 @@ extension EditorSession {
     /// paragraph never makes the row in the Layers panel taller than one line.
     static func layerName(for content: String) -> String {
         let flattened = content.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
-        return flattened.isEmpty ? "Text" : String(flattened.prefix(40))
+        return flattened.isEmpty ? "文字" : String(flattened.prefix(40))
     }
 
     nonisolated static func textAttributes(_ style: LayerTextStyle) -> [NSAttributedString.Key: Any] {

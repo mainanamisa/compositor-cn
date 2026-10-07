@@ -1,11 +1,11 @@
 import AppKit
 
-nonisolated enum CameraRawCurvePage: String, CaseIterable, Sendable { case parametric = "Parametric", point = "Point" }
-nonisolated enum CameraRawPointChannel: String, CaseIterable, Sendable { case rgb = "RGB", red = "Red", green = "Green", blue = "Blue" }
-nonisolated enum CameraRawMixerPage: String, CaseIterable, Sendable { case hsl = "HSL", color = "Color", point = "Point Color" }
-nonisolated enum CameraRawMixerTab: String, CaseIterable, Sendable { case hue = "Hue", saturation = "Saturation", luminance = "Luminance" }
+nonisolated enum CameraRawCurvePage: String, CaseIterable, Sendable { case parametric = "参数", point = "点" }
+nonisolated enum CameraRawPointChannel: String, CaseIterable, Sendable { case rgb = "RGB", red = "红色", green = "绿色", blue = "蓝色" }
+nonisolated enum CameraRawMixerPage: String, CaseIterable, Sendable { case hsl = "HSL", color = "颜色", point = "点颜色" }
+nonisolated enum CameraRawMixerTab: String, CaseIterable, Sendable { case hue = "色相", saturation = "饱和度", luminance = "明亮度" }
 nonisolated enum CameraRawGradePage: String, CaseIterable, Sendable {
-    case threeWay = "Three-Way", shadows = "Shadows", midtones = "Midtones", highlights = "Highlights", global = "Global"
+    case threeWay = "三向", shadows = "阴影", midtones = "中间调", highlights = "高光", global = "全局"
 }
 
 struct CameraRawDrag {
@@ -149,7 +149,7 @@ nonisolated struct CameraRawCurveSettings: Equatable, Sendable {
 
 /// Eight color families, each with hue, saturation, and luminance shifts of −100…100.
 nonisolated struct CameraRawMixerSettings: Equatable, Sendable {
-    static let names = ["Reds", "Oranges", "Yellows", "Greens", "Aquas", "Blues", "Purples", "Magentas"]
+    static let names = ["红色", "橙色", "黄色", "绿色", "浅绿色", "蓝色", "紫色", "洋红色"]
     static let centers = [0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 270.0, 300.0]
     var hue = Array(repeating: 0.0, count: 8)
     var saturation = Array(repeating: 0.0, count: 8)

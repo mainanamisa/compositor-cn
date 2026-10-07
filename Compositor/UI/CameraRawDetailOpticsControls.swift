@@ -8,33 +8,33 @@ struct CameraRawDetailControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Sharpening").font(.subheadline)
-            sharpenSlider("Amount", \.sharpenAmount, range: CameraRawDetailSettings.sharpenAmountRange, decimals: 0, reset: 0,
-                          help: "Controls how strong the sharpening is.")
-            sharpenSlider("Radius", \.sharpenRadius, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 10,
-                          help: "How far from each edge the sharpening reaches, in pixels.")
-            sharpenSlider("Detail", \.sharpenDetail, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 25,
-                          help: "Emphasizes fine texture over broader edges.")
-            sharpenSlider("Masking", \.sharpenMasking, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
-                          maskingPreview: true, help: "Limits sharpening to stronger edges. Hold Option to see the mask.")
-            Text("Noise Reduction").font(.subheadline)
-            slider("Luminance", \.noiseLuminance, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
-                   help: "Smooths grain and noise in brightness.")
+            Text("锐化").font(.subheadline)
+            sharpenSlider("数量", \.sharpenAmount, range: CameraRawDetailSettings.sharpenAmountRange, decimals: 0, reset: 0,
+                          help: "控制锐化的强度。")
+            sharpenSlider("半径", \.sharpenRadius, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 10,
+                          help: "锐化从每条边缘向外影响的距离，以像素为单位。")
+            sharpenSlider("细节", \.sharpenDetail, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 25,
+                          help: "强调细腻纹理而非较宽的边缘。")
+            sharpenSlider("蒙版", \.sharpenMasking, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
+                          maskingPreview: true, help: "将锐化限制在较强的边缘。按住 Option 可查看蒙版。")
+            Text("减少杂色").font(.subheadline)
+            slider("明亮度", \.noiseLuminance, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
+                   help: "平滑亮度中的颗粒与噪点。")
             Group {
-                slider("Luminance Detail", \.noiseLuminanceDetail, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 50,
-                       help: "Preserves fine texture while luminance noise is reduced.")
-                slider("Luminance Contrast", \.noiseLuminanceContrast, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
-                       help: "Keeps local contrast after luminance smoothing.")
+                slider("明亮度细节", \.noiseLuminanceDetail, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 50,
+                       help: "减少明亮度噪点时保留细腻纹理。")
+                slider("明亮度对比", \.noiseLuminanceContrast, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
+                       help: "明亮度平滑后保留局部对比度。")
             }
             .opacity(raw.detail.noiseLuminance > 0 ? 1 : 0.45)
             .disabled(raw.detail.noiseLuminance <= 0)
-            slider("Color", \.noiseColor, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
-                   help: "Smooths colored speckles.")
+            slider("颜色", \.noiseColor, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 0,
+                   help: "平滑彩色斑点。")
             Group {
-                slider("Color Detail", \.noiseColorDetail, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 50,
-                       help: "Preserves colored edges while color noise is reduced.")
-                slider("Color Smoothness", \.noiseColorSmoothness, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 50,
-                       help: "Makes the color smoothing softer or tighter.")
+                slider("颜色细节", \.noiseColorDetail, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 50,
+                       help: "减少颜色噪点时保留彩色边缘。")
+                slider("颜色平滑度", \.noiseColorSmoothness, range: CameraRawDetailSettings.unitRange, decimals: 0, reset: 50,
+                       help: "让颜色平滑更柔和或更紧致。")
             }
             .opacity(raw.detail.noiseColor > 0 ? 1 : 0.45)
             .disabled(raw.detail.noiseColor <= 0)
@@ -90,24 +90,24 @@ struct CameraRawOpticsControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Remove Chromatic Aberration", isOn: binding(\.removeChromaticAberration))
-                .help("Pulls red and blue fringes apart toward the center to reduce color edging.")
-            Toggle("Enable Lens Profile Corrections", isOn: binding(\.enableLensProfile))
-                .help("Applies generic profile strength when camera metadata is not available.")
+            Toggle("删除色差", isOn: binding(\.removeChromaticAberration))
+                .help("将红色和蓝色边缘向中心收拢，以减少彩色镶边。")
+            Toggle("启用镜头配置文件校正", isOn: binding(\.enableLensProfile))
+                .help("在缺少相机元数据时应用通用配置文件强度。")
             if raw.optics.enableLensProfile {
-                Text("No lens metadata on this layer. Profile sliders set generic correction strength.")
+                Text("此图层没有镜头元数据。配置文件滑块设置通用校正强度。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                opticsSlider("Distortion", \.profileDistortion, range: CameraRawOpticsSettings.unitRange, reset: 100,
-                             help: "How much of the profile distortion correction is applied.")
-                opticsSlider("Vignetting", \.profileVignetting, range: CameraRawOpticsSettings.unitRange, reset: 100,
-                             help: "How much of the profile vignetting correction is applied.")
+                opticsSlider("扭曲度", \.profileDistortion, range: CameraRawOpticsSettings.unitRange, reset: 100,
+                             help: "应用多少配置文件扭曲校正。")
+                opticsSlider("晕影", \.profileVignetting, range: CameraRawOpticsSettings.unitRange, reset: 100,
+                             help: "应用多少配置文件晕影校正。")
             }
-            Text("Manual").font(.subheadline)
-            opticsSlider("Distortion", \.distortion, range: CameraRawOpticsSettings.toneRange, reset: 0,
-                         help: "Straightens barrel or pincushion bending.")
+            Text("手动").font(.subheadline)
+            opticsSlider("扭曲度", \.distortion, range: CameraRawOpticsSettings.toneRange, reset: 0,
+                         help: "校正桶形或枕形弯曲。")
             HStack(spacing: 10) {
-                Text("Defringe").frame(minWidth: CameraRawControls.labelWidth, alignment: .leading)
-                    .help("Click a purple or green fringe to set its hue range.")
+                Text("去边").frame(minWidth: CameraRawControls.labelWidth, alignment: .leading)
+                    .help("点按紫色或绿色边缘以设置其色相范围。")
                 Button {
                     session.filterEdit?.samplesDefringe.toggle()
                     session.brushRevision += 1
@@ -116,24 +116,24 @@ struct CameraRawOpticsControls: View {
                 }
                 .buttonStyle(.borderless)
                 .tint(session.filterEdit?.samplesDefringe == true ? Color.accentColor : Color.secondary)
-                .help("Click a purple or green fringe to set its hue range.")
+                .help("点按紫色或绿色边缘以设置其色相范围。")
             }
             if session.filterEdit?.samplesDefringe == true {
-                Text("Click the fringe on the layer. Click the eyedropper again to stop.")
+                Text("点按图层上的边缘。再次点按吸管可停止。")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            opticsSlider("Purple Amount", \.purpleAmount, range: CameraRawOpticsSettings.unitRange, reset: 0,
-                         help: "Weakens purple fringes inside the purple hue range.")
-            hueRange("Purple Hue", low: \.purpleHueLow, high: \.purpleHueHigh,
-                     help: "Hue range where purple defringe runs.")
-            opticsSlider("Green Amount", \.greenAmount, range: CameraRawOpticsSettings.unitRange, reset: 0,
-                         help: "Weakens green fringes inside the green hue range.")
-            hueRange("Green Hue", low: \.greenHueLow, high: \.greenHueHigh,
-                     help: "Hue range where green defringe runs.")
-            opticsSlider("Vignetting", \.vignetteAmount, range: CameraRawOpticsSettings.toneRange, reset: 0,
-                         help: "Brightens or darkens the corners to counter lens falloff.")
-            opticsSlider("Midpoint", \.vignetteMidpoint, range: CameraRawOpticsSettings.unitRange, reset: 50,
-                         help: "Moves the vignette correction inward or outward.")
+            opticsSlider("紫色数量", \.purpleAmount, range: CameraRawOpticsSettings.unitRange, reset: 0,
+                         help: "减弱紫色色相范围内的紫色边缘。")
+            hueRange("紫色色相", low: \.purpleHueLow, high: \.purpleHueHigh,
+                     help: "执行紫色去边的色相范围。")
+            opticsSlider("绿色数量", \.greenAmount, range: CameraRawOpticsSettings.unitRange, reset: 0,
+                         help: "减弱绿色色相范围内的绿色边缘。")
+            hueRange("绿色色相", low: \.greenHueLow, high: \.greenHueHigh,
+                     help: "执行绿色去边的色相范围。")
+            opticsSlider("晕影", \.vignetteAmount, range: CameraRawOpticsSettings.toneRange, reset: 0,
+                         help: "提亮或压暗四角以抵消镜头暗角。")
+            opticsSlider("中点", \.vignetteMidpoint, range: CameraRawOpticsSettings.unitRange, reset: 50,
+                         help: "将晕影校正向内或向外移动。")
         }
     }
 
@@ -166,16 +166,16 @@ struct CameraRawOpticsControls: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundStyle(.secondary).help(help)
             HStack(spacing: 8) {
-                Text("Low").font(.caption2).help("Start of the hue range, in degrees.")
+                Text("低").font(.caption2).help("色相范围的起点，以度为单位。")
                 CameraRawSlider(value: raw.optics[keyPath: low], range: CameraRawOpticsSettings.hueRange, track: .plain,
-                                help: "Start of the hue range, in degrees.",
+                                help: "色相范围的起点，以度为单位。",
                                 onChange: { value in update { $0.cameraRaw.optics[keyPath: low] = value.rounded() } },
-                                onReset: { update { $0.cameraRaw.optics[keyPath: low] = title.contains("Purple") ? 270 : 60 } })
-                Text("High").font(.caption2).help("End of the hue range, in degrees.")
+                                onReset: { update { $0.cameraRaw.optics[keyPath: low] = title.contains("紫色") ? 270 : 60 } })
+                Text("高").font(.caption2).help("色相范围的终点，以度为单位。")
                 CameraRawSlider(value: raw.optics[keyPath: high], range: CameraRawOpticsSettings.hueRange, track: .plain,
-                                help: "End of the hue range, in degrees.",
+                                help: "色相范围的终点，以度为单位。",
                                 onChange: { value in update { $0.cameraRaw.optics[keyPath: high] = value.rounded() } },
-                                onReset: { update { $0.cameraRaw.optics[keyPath: high] = title.contains("Purple") ? 310 : 120 } })
+                                onReset: { update { $0.cameraRaw.optics[keyPath: high] = title.contains("紫色") ? 310 : 120 } })
             }
         }
         .padding(.leading, CameraRawControls.labelWidth + 10)

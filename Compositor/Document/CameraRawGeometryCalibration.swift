@@ -2,13 +2,13 @@ import AppKit
 import CoreImage
 
 nonisolated enum CameraRawUprightMode: String, CaseIterable, Sendable {
-    case off = "Off"
-    case guided = "Guided"
+    case off = "关闭"
+    case guided = "参考线"
 }
 
 nonisolated enum CameraRawProjection: String, CaseIterable, Sendable {
-    case perspective = "Perspective"
-    case rectilinear = "Rectilinear"
+    case perspective = "透视"
+    case rectilinear = "直线"
 }
 
 /// A guide line in normalized image coordinates, 0…1 from the lower-left of the pixel grid.
@@ -173,12 +173,12 @@ nonisolated struct CameraRawGeometrySettings: Equatable, Sendable {
 }
 
 nonisolated enum CameraRawProcessVersion: String, CaseIterable, Sendable {
-    case version1 = "Version 1"
-    case version2 = "Version 2"
-    case version3 = "Version 3"
-    case version4 = "Version 4"
-    case version5 = "Version 5"
-    case version6 = "Version 6"
+    case version1 = "版本 1"
+    case version2 = "版本 2"
+    case version3 = "版本 3"
+    case version4 = "版本 4"
+    case version5 = "版本 5"
+    case version6 = "版本 6"
     var kernelValue: Int32 {
         switch self {
         case .version1: return 1
@@ -194,17 +194,17 @@ nonisolated enum CameraRawProcessVersion: String, CaseIterable, Sendable {
     var summary: String {
         switch self {
         case .version1:
-            return "Earliest response. Hue, saturation, and shadow tint move about half as far as Version 6."
+            return "最早的响应。色相、饱和度和阴影色调的移动幅度约为版本 6 的一半"
         case .version2:
-            return "A little stronger than Version 1. The sliders below still fall well short of the current look."
+            return "比版本 1 略强。下方滑块的效果仍明显弱于当前外观"
         case .version3:
-            return "Firmer color than Version 2. Primary shifts stay gentler than the current process."
+            return "比版本 2 的颜色更扎实。原色偏移仍比当前处理温和"
         case .version4:
-            return "The 2012 response. Calibration reaches most of the strength used by Version 6."
+            return "2012 年的响应。校准可达到版本 6 所用的大部分强度"
         case .version5:
-            return "Close to the current process, with slightly softer primary and shadow shifts."
+            return "接近当前处理，原色和阴影偏移略柔和"
         case .version6:
-            return "Current default. The calibration sliders below apply at full strength."
+            return "当前默认值。下方校准滑块以全强度应用"
         }
     }
 }

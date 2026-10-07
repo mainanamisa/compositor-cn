@@ -12,50 +12,50 @@ struct CameraRawCurveControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Curve", selection: Binding(get: { edit?.cameraRawCurvePage ?? .parametric }, set: { session.filterEdit?.cameraRawCurvePage = $0 })) {
+            Picker("曲线", selection: Binding(get: { edit?.cameraRawCurvePage ?? .parametric }, set: { session.filterEdit?.cameraRawCurvePage = $0 })) {
                 ForEach(CameraRawCurvePage.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .help("Parametric lifts tonal regions. Point places anchors on the curve.")
+            .help("参数曲线提升各色调区域。点曲线在曲线上放置锚点。")
             if edit?.cameraRawCurvePage == .point {
-                Picker("Channel", selection: Binding(get: { edit?.cameraRawPointChannel ?? .rgb }, set: { session.filterEdit?.cameraRawPointChannel = $0 })) {
+                Picker("通道", selection: Binding(get: { edit?.cameraRawPointChannel ?? .rgb }, set: { session.filterEdit?.cameraRawPointChannel = $0 })) {
                     ForEach(CameraRawPointChannel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .help("RGB changes brightness. Red, green, and blue also shift the color.")
+                .help("RGB 改变亮度。红、绿、蓝通道还会改变颜色。")
                 .onChange(of: edit?.cameraRawPointChannel) { _, _ in selected = nil; drag = nil }
             }
             curveGraph
                 .frame(height: 150)
                 .help(edit?.cameraRawCurvePage == .parametric
-                      ? "Drag up or down to lift or lower those tones. Drag a divider along the bottom to change which tones each region covers."
-                      : "Drag a point. Click to add one. Double-click a point to remove it.")
+                      ? "上下拖移以提升或降低相应色调。拖移底部的分隔线可改变各区域覆盖的色调范围。"
+                      : "拖移锚点。点按添加锚点。连按锚点将其删除。")
             if edit?.cameraRawCurvePage != .point {
-                amount("Highlights", \.highlights, "Lifts or lowers the brightest tones.")
-                amount("Lights", \.lights, "Lifts or lowers the light tones.")
-                amount("Darks", \.darks, "Lifts or lowers the dark tones.")
-                amount("Shadows", \.shadows, "Lifts or lowers the darkest tones.")
+                amount("高光", \.highlights, "提升或降低最亮的色调。")
+                amount("亮光", \.lights, "提升或降低较亮的色调。")
+                amount("暗调", \.darks, "提升或降低较暗的色调。")
+                amount("阴影", \.shadows, "提升或降低最暗的色调。")
             } else {
                 if let point = selectedPoint {
-                    Text("In \(Int((point.x * 255).rounded()))   Out \(Int((point.y * 255).rounded()))")
+                    Text("输入 \(Int((point.x * 255).rounded()))   输出 \(Int((point.y * 255).rounded()))")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
-                        .help("Input and output of the selected curve point.")
+                        .help("所选曲线锚点的输入值和输出值。")
                 }
-                Picker("Preset", selection: Binding(get: { CurvePreset.matching(currentPoints) }, set: applyPreset)) {
-                    Text("Custom").tag(CurvePreset.custom)
-                    Text("Linear").tag(CurvePreset.linear)
-                    Text("Medium Contrast").tag(CurvePreset.medium)
-                    Text("Strong Contrast").tag(CurvePreset.strong)
+                Picker("预设", selection: Binding(get: { CurvePreset.matching(currentPoints) }, set: applyPreset)) {
+                    Text("自定").tag(CurvePreset.custom)
+                    Text("线性").tag(CurvePreset.linear)
+                    Text("中对比度").tag(CurvePreset.medium)
+                    Text("强对比度").tag(CurvePreset.strong)
                 }
-                .help("Replaces this curve with a straight line or a contrast curve.")
+                .help("将当前曲线替换为直线或对比度曲线。")
                 if edit?.cameraRawPointChannel == .rgb {
-                    slider("Refine Saturation", \.refineSaturation, -100...100, 0, "How much the curve also changes color strength. Zero matches Photoshop; lower keeps it to brightness, higher adds more color.")
+                    slider("优化饱和度", \.refineSaturation, -100...100, 0, "曲线对颜色强度的影响程度。零与 Photoshop 一致；调低仅影响亮度，调高增加更多颜色。")
                 }
             }
-            targetButton(armed: edit?.targetsCameraRawCurve == true, help: "Drag on the picture to move the curve for the tone under the pointer.") {
+            targetButton(armed: edit?.targetsCameraRawCurve == true, help: "在图片上拖移，以调整指针下色调对应的曲线。") {
                 session.filterEdit?.targetsCameraRawMixer = false
                 session.filterEdit?.targetsCameraRawCurve.toggle()
             }
@@ -228,7 +228,7 @@ struct CameraRawCurveControls: View {
     }
 
     private func targetButton(armed: Bool, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Label("Targeted Adjustment", systemImage: "scope") }
+        Button(action: action) { Label("目标调整", systemImage: "scope") }
             .buttonStyle(.bordered)
             .tint(armed ? Color.accentColor : Color.secondary)
             .help(help)
@@ -271,35 +271,35 @@ struct CameraRawMixerControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Mixer", selection: Binding(get: { edit?.cameraRawMixerPage ?? .hsl }, set: { session.filterEdit?.cameraRawMixerPage = $0 })) {
+            Picker("混色器", selection: Binding(get: { edit?.cameraRawMixerPage ?? .hsl }, set: { session.filterEdit?.cameraRawMixerPage = $0 })) {
                 ForEach(CameraRawMixerPage.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .help("HSL lists every color. Color edits one family. Point Color adjusts a color you pick.")
+            .help("HSL 列出所有颜色。颜色模式编辑单个色系。点颜色调整你选取的颜色。")
             switch edit?.cameraRawMixerPage ?? .hsl {
             case .hsl:
-                Picker("Component", selection: Binding(get: { edit?.cameraRawMixerTab ?? .hue }, set: { session.filterEdit?.cameraRawMixerTab = $0 })) {
+                Picker("分量", selection: Binding(get: { edit?.cameraRawMixerTab ?? .hue }, set: { session.filterEdit?.cameraRawMixerTab = $0 })) {
                     ForEach(CameraRawMixerTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
-                .help("Hue shifts the color, Saturation its strength, and Luminance its brightness.")
+                .help("色相改变颜色，饱和度改变颜色强度，明亮度改变颜色亮度。")
                 ForEach(0..<8, id: \.self) { index in familySlider(index) }
             case .color:
                 swatches
-                colorSlider("Hue", \.hue, "Shifts the selected color family around the wheel.")
-                colorSlider("Saturation", \.saturation, "Makes the selected color family stronger or quieter.")
-                colorSlider("Luminance", \.luminance, "Makes the selected color family lighter or darker.")
+                colorSlider("色相", \.hue, "让所选色系沿色轮偏移。")
+                colorSlider("饱和度", \.saturation, "让所选色系更鲜艳或更柔和。")
+                colorSlider("明亮度", \.luminance, "让所选色系更亮或更暗。")
             case .point:
                 pointColor
             }
             Button {
                 session.filterEdit?.targetsCameraRawCurve = false
                 session.filterEdit?.targetsCameraRawMixer.toggle()
-            } label: { Label("Targeted Adjustment", systemImage: "scope") }
+            } label: { Label("目标调整", systemImage: "scope") }
             .buttonStyle(.bordered)
             .tint(edit?.targetsCameraRawMixer == true ? Color.accentColor : Color.secondary)
-            .help("Drag a color in the picture. Nearby color families move together.")
+            .help("在图片中拖移某种颜色。相近的色系会一起变化。")
         }
     }
 
@@ -315,7 +315,7 @@ struct CameraRawMixerControls: View {
 
     private func familySlider(_ index: Int) -> some View {
         let key = mixerKey
-        let help = "\((edit?.cameraRawMixerTab ?? .hue).rawValue) of \(CameraRawMixerSettings.names[index])."
+        let help = "\(CameraRawMixerSettings.names[index])的\((edit?.cameraRawMixerTab ?? .hue).rawValue)"
         return HStack {
             Text(CameraRawMixerSettings.names[index]).frame(width: 78, alignment: .leading).help(help)
                 .scrubbable(sensitivity: 1,
@@ -348,7 +348,7 @@ struct CameraRawMixerControls: View {
                         .overlay { Circle().stroke(edit?.cameraRawMixerSwatch == index ? Color.white : Color.clear, lineWidth: 2) }
                 }
                 .buttonStyle(.plain)
-                .help("Edit \(CameraRawMixerSettings.names[index]).")
+                .help("编辑\(CameraRawMixerSettings.names[index])")
             }
         }
     }
@@ -360,7 +360,7 @@ struct CameraRawMixerControls: View {
                     session.filterEdit?.samplesPointColor.toggle()
                     session.brushRevision += 1
                 } label: { Image(systemName: "eyedropper") }
-                .help("Click the picture to save a color. Up to eight colors.")
+                .help("点按图片以存储一种颜色。最多八种颜色。")
                 .tint(edit?.samplesPointColor == true ? Color.accentColor : Color.secondary)
                 ForEach(raw.mixer.points.indices, id: \.self) { index in
                     let point = raw.mixer.points[index]
@@ -370,22 +370,22 @@ struct CameraRawMixerControls: View {
                             .overlay { Circle().stroke(edit?.cameraRawPointIndex == index ? Color.white : Color.clear, lineWidth: 2) }
                     }
                     .buttonStyle(.plain)
-                    .help("Select this picked color.")
+                    .help("选择这个已选取的颜色。")
                 }
             }
             if raw.mixer.points.indices.contains(edit?.cameraRawPointIndex ?? 0) {
-                pointSlider("Hue Shift", \.hueShift, help: "Shifts the picked color around the color wheel.",
+                pointSlider("色相偏移", \.hueShift, help: "让选取的颜色沿色轮偏移。",
                            track: .hue(raw.mixer.points[edit?.cameraRawPointIndex ?? 0].hue))
-                pointSlider("Saturation Shift", \.saturationShift, help: "Makes the picked color stronger or quieter.",
+                pointSlider("饱和度偏移", \.saturationShift, help: "让选取的颜色更鲜艳或更柔和。",
                            track: .saturation(raw.mixer.points[edit?.cameraRawPointIndex ?? 0].hue))
-                pointSlider("Luminance Shift", \.luminanceShift, help: "Makes the picked color lighter or darker.",
+                pointSlider("明亮度偏移", \.luminanceShift, help: "让选取的颜色更亮或更暗。",
                            track: .luminance(raw.mixer.points[edit?.cameraRawPointIndex ?? 0].hue))
-                pointSlider("Hue Range", \.hueRange, help: "How far in hue the adjustment reaches.", range: 5...180, reset: 30)
-                pointSlider("Saturation Range", \.saturationRange, help: "How far in saturation the adjustment reaches.", range: 0.05...1, reset: 0.4)
-                pointSlider("Luminance Range", \.luminanceRange, help: "How far in brightness the adjustment reaches.", range: 0.05...1, reset: 0.4)
-                Toggle("Visualize Range", isOn: Binding(get: { raw.mixer.points[edit?.cameraRawPointIndex ?? 0].visualize },
+                pointSlider("色相范围", \.hueRange, help: "调整在色相上影响的范围。", range: 5...180, reset: 30)
+                pointSlider("饱和度范围", \.saturationRange, help: "调整在饱和度上影响的范围。", range: 0.05...1, reset: 0.4)
+                pointSlider("明亮度范围", \.luminanceRange, help: "调整在亮度上影响的范围。", range: 0.05...1, reset: 0.4)
+                Toggle("可视化范围", isOn: Binding(get: { raw.mixer.points[edit?.cameraRawPointIndex ?? 0].visualize },
                                                        set: { value in updatePoint { $0.visualize = value } }))
-                    .help("Dims the picture outside this color's range. It is not kept when you press OK.")
+                    .help("将此颜色范围之外的画面变暗。按“确定”后不会保留。")
             }
         }
     }
@@ -432,28 +432,38 @@ struct CameraRawGradingControls: View {
         VStack(alignment: .leading, spacing: 8) {
             // Five segments spelled out want 453 points and the docked panel has 374, so the
             // choice is a menu rather than a row that runs past the panel's edge.
-            Picker("Grading", selection: Binding(get: { page }, set: { session.filterEdit?.cameraRawGradePage = $0 })) {
+            Picker("颜色分级", selection: Binding(get: { page }, set: { session.filterEdit?.cameraRawGradePage = $0 })) {
                 ForEach(CameraRawGradePage.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.menu)
             .labelsHidden()
             .fixedSize()
-            .help("Three-Way shows shadows, midtones, and highlights. The other choices show one wheel.")
+            .help("三向同时显示阴影、中间调和高光。其他选项只显示一个色轮。")
             if page == .threeWay {
                 HStack(spacing: 30) {
-                    wheel("Shadows", \.shadows)
-                    wheel("Midtones", \.midtones)
-                    wheel("Highlights", \.highlights)
+                    wheel("阴影", \.shadows)
+                    wheel("中间调", \.midtones)
+                    wheel("高光", \.highlights)
                 }
             } else {
-                wheel(page.rawValue, pageKey)
+                wheel(pageTitle, pageKey)
             }
-            slider("Blending", raw.grading.blending, 0...100, 50, "Controls how much the three tonal wheels overlap.") { value in
+            slider("混合", raw.grading.blending, 0...100, 50, "控制三个色调色轮的重叠程度。") { value in
                 update { $0.grading.blending = value }
             }
-            slider("Balance", raw.grading.balance, -100...100, 0, "Shifts the wheels toward shadows or highlights.") { value in
+            slider("平衡", raw.grading.balance, -100...100, 0, "让色轮偏向阴影或高光。") { value in
                 update { $0.grading.balance = value }
             }
+        }
+    }
+
+    private var pageTitle: String {
+        switch page {
+        case .threeWay: return "三向"
+        case .shadows: return "阴影"
+        case .midtones: return "中间调"
+        case .highlights: return "高光"
+        case .global: return "全局"
         }
     }
 
@@ -469,16 +479,16 @@ struct CameraRawGradingControls: View {
     private func wheel(_ title: String, _ key: WritableKeyPath<CameraRawGradingSettings, CameraRawGradeWheel>) -> some View {
         let wheel = raw.grading[keyPath: key]
         return VStack(spacing: 4) {
-            Text(title).font(.caption).help("Drag inside the wheel. Angle sets hue, distance sets saturation.")
+            Text(title).font(.caption).help("在色轮内拖移。角度决定色相，距离决定饱和度。")
             GradeWheel(hue: wheel.hue, saturation: wheel.saturation,
                        set: { hue, saturation in update { $0.grading[keyPath: key].hue = hue; $0.grading[keyPath: key].saturation = saturation } },
                        reset: { update { $0.grading[keyPath: key].hue = 0; $0.grading[keyPath: key].saturation = 0 } })
                 .frame(width: 86, height: 86)
             Text("\(Int(wheel.hue.rounded()))°  \(Int(wheel.saturation.rounded()))")
                 .font(.caption2.monospacedDigit())
-                .help("Hue and saturation of this wheel.")
+                .help("此色轮的色相和饱和度。")
             // A slider asks for 120 on its own, which put three columns past the panel's edge.
-            CameraRawSlider(value: wheel.luminance, range: -100...100, track: .plain, help: "Brightness added by this wheel.",
+            CameraRawSlider(value: wheel.luminance, range: -100...100, track: .plain, help: "此色轮增加的亮度。",
                             onChange: { value in update { $0.grading[keyPath: key].luminance = value } },
                             onReset: { update { $0.grading[keyPath: key].luminance = 0 } })
                 .frame(width: 96)
@@ -531,7 +541,7 @@ private struct GradeWheel: View {
                 set(degrees, min(100, Double(hypot(dx, dy) / radius) * 100))
             })
             .onTapGesture(count: 2) { reset() }
-            .help("Drag to set hue and saturation. Double-click to reset this wheel.")
+            .help("拖移以设置色相和饱和度。连按复位此色轮。")
         }
     }
 }

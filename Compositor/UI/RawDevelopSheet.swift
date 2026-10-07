@@ -19,7 +19,7 @@ struct RawDevelopSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Develop “\(url.lastPathComponent)”").font(.title2.bold())
+            Text("处理 “\(url.lastPathComponent)”").font(.title2.bold())
             ZStack {
                 RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.35))
                 if let preview {
@@ -31,16 +31,16 @@ struct RawDevelopSheet: View {
             }
             .frame(width: 560, height: 340)
 
-            slider("Exposure", value: $settings.exposure, range: -3...3, unit: " EV", precision: 2)
-            slider("Temperature", value: $settings.temperature, range: 2000...12000, unit: " K", precision: 0)
-            slider("Tint", value: $settings.tint, range: -150...150, unit: "", precision: 0)
-            slider("Boost", value: $settings.boost, range: 0...1, unit: "", precision: 2)
+            slider("曝光", value: $settings.exposure, range: -3...3, unit: " EV", precision: 2)
+            slider("色温", value: $settings.temperature, range: 2000...12000, unit: " K", precision: 0)
+            slider("色调", value: $settings.tint, range: -150...150, unit: "", precision: 0)
+            slider("增强", value: $settings.boost, range: 0...1, unit: "", precision: 2)
 
             HStack {
-                Button("Reset") { settings.reset() }.disabled(settings.isAsShot)
+                Button("重置") { settings.reset() }.disabled(settings.isAsShot)
                 Spacer()
-                Button("Cancel") { session.finishRawDevelop(nil) }.keyboardShortcut(.cancelAction)
-                Button("Import") { session.finishRawDevelop(settings) }.keyboardShortcut(.defaultAction)
+                Button("取消") { session.finishRawDevelop(nil) }.keyboardShortcut(.cancelAction)
+                Button("导入") { session.finishRawDevelop(settings) }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(24).fixedSize()

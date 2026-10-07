@@ -7,8 +7,8 @@ struct CurvesControls: View {
     private var points: [CurvePoint] { settings.channels[settings.channel.index] }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Channel", selection: $settings.channel) {
-                ForEach(LevelsChannel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            Picker("通道", selection: $settings.channel) {
+                ForEach(LevelsChannel.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }.onChange(of: settings.channel) { _, _ in selected = nil; dragging = nil }
             Canvas { context, size in
                 func position(_ p: CurvePoint) -> CGPoint { CGPoint(x: p.x/255*size.width, y: (1-p.y/255)*size.height) }
@@ -53,17 +53,30 @@ struct CurvesControls: View {
                     settings.channels[settings.channel.index] = p
                 }.onEnded { _ in dragging = nil })
             } }
-            Text("Click to add a point. Drag to adjust.").font(.caption).foregroundStyle(.secondary)
+            Text("点按以添加锚点，拖移以调整。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 if let selected, points.indices.contains(selected) {
-                    Text("Input \(Int(points[selected].x)) · Output \(Int(points[selected].y))").monospacedDigit()
+                    Text("输入 \(Int(points[selected].x)) · 输出 \(Int(points[selected].y))").monospacedDigit()
                 }
                 Spacer()
-                Button("Remove point") {
+                Button("删除锚点") {
                     if let selected, selected > 0, selected < points.count-1 { settings.channels[settings.channel.index].remove(at: selected); self.selected = nil }
                 }.disabled(selected == nil || selected == 0 || selected == points.count-1)
             }
-            Button("Reset curve") { settings.channels[settings.channel.index] = [CurvePoint(x: 0,y: 0), CurvePoint(x: 255,y: 255)]; selected = nil }
+            Button("复位曲线") { settings.channels[settings.channel.index] = [CurvePoint(x: 0,y: 0), CurvePoint(x: 255,y: 255)]; selected = nil }
+        }
+    }
+}
+
+// LevelsSheet.swift keeps the same file-private mapping; the raw values stay English because
+// LevelsChannel rides along in Codable settings.
+private extension LevelsChannel {
+    var displayName: String {
+        switch self {
+        case .rgb: return "RGB"
+        case .red: return "红"
+        case .green: return "绿"
+        case .blue: return "蓝"
         }
     }
 }

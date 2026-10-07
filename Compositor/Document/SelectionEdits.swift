@@ -59,7 +59,7 @@ extension EditorSession {
         let color = isMaskSelected
             ? CGColor(gray: value.red, alpha: 1)
             : CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: [value.red, value.green, value.blue, 1])!
-        await applyPixelEdit(to: layer, name: isMaskSelected ? "Fill Mask" : "Fill") { try $0.fill(color) }
+        await applyPixelEdit(to: layer, name: isMaskSelected ? "填充蒙版" : "填充") { try $0.fill(color) }
     }
 
     /// Delete with a selection: image pixels become transparent; on a mask the
@@ -68,7 +68,7 @@ extension EditorSession {
         guard selection != nil, canEditPixels, let layer = activeLayer else { return }
         if isMaskSelected { await fillSelection(with: .background); return }
         guard layer.asset != nil else { return }
-        await applyPixelEdit(to: layer, name: "Clear") { try $0.clearPixels() }
+        await applyPixelEdit(to: layer, name: "清除") { try $0.clearPixels() }
     }
 
     /// The Delete key: clears the selection when there is one; otherwise deletes the
@@ -126,7 +126,7 @@ extension EditorSession {
             // Only write over the layer the invert was computed from.
             guard let current = self.document?.layers[safe: index], current.id == layer.id,
                   current.asset?.image === layer.asset?.image, current.mask?.asset.image === layer.mask?.asset.image else { return }
-            beginEdit(mask ? "Invert Mask" : "Invert")
+            beginEdit(mask ? "反相蒙版" : "反相")
             if mask {
                 self.document?.layers[index].mask = current.mask.map { $0.replacing(asset) } ?? LayerMask(asset: asset)
             } else {
@@ -182,7 +182,7 @@ extension EditorSession {
         return selection
     }
 
-    /// Commits the pixels and the moved outline together as one "Move Pixels" undo step.
+    /// Commits the pixels and the moved outline together as one "移动像素" undo step.
     /// The outline keeps showing at its new place throughout, so nothing jumps back.
     func finishPixelMove() async {
         guard let move = pixelMove, !isProjectBusy else { return }
@@ -190,7 +190,7 @@ extension EditorSession {
             let moved = move.movedSelection
             do {
                 try move.applyOffset()
-                try await commitRasterEdit(move.raster, name: move.duplicate ? "Duplicate Pixels" : "Move Pixels") { self.document?.selection = moved }
+                try await commitRasterEdit(move.raster, name: move.duplicate ? "复制像素" : "移动像素") { self.document?.selection = moved }
             } catch { brushError = error.localizedDescription }
         }
         pixelMove = nil

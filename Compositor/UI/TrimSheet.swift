@@ -12,13 +12,13 @@ struct TrimSheet: View {
 
     @ViewBuilder private var sheet: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Trim").font(.title2.bold())
+            Text("裁切").font(.title2.bold())
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Based On").font(.headline)
+                Text("基于").font(.headline)
                 Picker("", selection: $basedOn) {
                     ForEach(TrimBasedOn.allCases) { option in
-                        Text(option.rawValue).tag(option)
+                        Text(option.displayName).tag(option)
                     }
                 }
                 .labelsHidden()
@@ -28,15 +28,15 @@ struct TrimSheet: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Trim Away").font(.headline)
+                Text("裁掉").font(.headline)
                 Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
                     GridRow {
-                        Toggle("Top", isOn: $trimTop)
-                        Toggle("Bottom", isOn: $trimBottom)
+                        Toggle("顶边", isOn: $trimTop)
+                        Toggle("底边", isOn: $trimBottom)
                     }
                     GridRow {
-                        Toggle("Left", isOn: $trimLeft)
-                        Toggle("Right", isOn: $trimRight)
+                        Toggle("左边", isOn: $trimLeft)
+                        Toggle("右边", isOn: $trimRight)
                     }
                 }
             }
@@ -44,10 +44,10 @@ struct TrimSheet: View {
             Divider()
 
             HStack {
-                Button("Cancel") { finish(nil) }
+                Button("取消") { finish(nil) }
                     .configuredNativeShortcut(.escape)
                 Spacer()
-                Button("OK") {
+                Button("好") {
                     let options = TrimOptions(
                         basedOn: basedOn,
                         top: trimTop,
@@ -64,5 +64,15 @@ struct TrimSheet: View {
         }
         .padding(24)
         .frame(width: 320)
+    }
+}
+
+private extension TrimBasedOn {
+    var displayName: String {
+        switch self {
+        case .transparentPixels: return "透明像素"
+        case .topLeftPixelColor: return "左上角像素颜色"
+        case .bottomRightPixelColor: return "右下角像素颜色"
+        }
     }
 }
