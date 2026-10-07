@@ -807,6 +807,11 @@ final class EditorSession {
                     let asset = try await ImageImporter.shared.decodeSVG(url, fitting: document?.size,
                                                                          remainingPixels: DocumentLimits.documentPixelBudget - usedPixels)
                     insert(asset, centeredAt: point)
+                } else if UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true {
+                    // Every page becomes a layer, the pages sharing the remaining pixel budget.
+                    for page in try await ImageImporter.shared.decodePDF(url, remainingPixels: DocumentLimits.documentPixelBudget - usedPixels) {
+                        insert(page, centeredAt: point)
+                    }
                 } else if PSDReader.matches(url) {
                     beginPSDReading(title: "打开“\(url.lastPathComponent)”？", confirmTitle: "导入")
                     let imported: PSDImport

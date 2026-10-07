@@ -21,6 +21,7 @@
 				<string>com.adobe.photoshop-large-image</string>
 				<string>public.camera-raw-image</string>
 				<string>public.svg-image</string>
+				<string>com.adobe.pdf</string>
 			</array>
 		</dict>
 		<dict>
@@ -101,6 +102,23 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>psb</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.composite-content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>PDF Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.adobe.pdf</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>pdf</string>
 				</array>
 			</dict>
 		</dict>

@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import CoreImage
 import ImageIO
+import PDFKit
 import UniformTypeIdentifiers
 
 nonisolated struct ImportedImage: @unchecked Sendable {
@@ -13,10 +14,12 @@ nonisolated struct ImportedImage: @unchecked Sendable {
 }
 
 nonisolated enum ImageImportError: LocalizedError {
-    case unreadable, unsupported, tooLarge
+    case unreadable, unreadablePDF, pdfLocked, unsupported, tooLarge
     var errorDescription: String? {
         switch self {
         case .unreadable: "无法读取该图像，它可能已损坏或不可用"
+        case .unreadablePDF: "无法读取 PDF，它可能已损坏或不可用"
+        case .pdfLocked: "PDF 已加密，请先移除密码"
         case .unsupported: "请选择 JPEG、PNG、HEIC、TIFF 或 Photoshop（PSD）文件"
         case .tooLarge: "此导入超出当前 \(DocumentLimits.documentBudgetMegapixels) 百万像素的文档预算或 \(DocumentLimits.maxSide.formatted()) 像素的边长限制"
         }
@@ -48,6 +51,38 @@ actor ImageImporter {
         NSGraphicsContext.restoreGraphicsState()
         guard let image = context.makeImage() else { throw ImageImportError.unreadable }
         return ImportedImage(image: image, thumbnail: try PixelAdjust.thumbnail(of: image), name: url.deletingPathExtension().lastPathComponent)
+    }
+
+    /// Every page of a PDF as one layer each, rasterized by PDFKit on white at 2× (144 DPI), Photoshop-fashion:
+    /// a page is opaque paper, so transparency does not carry over. The pages share the remaining pixel budget,
+    /// the scale stepping down from 2× rather than failing when a long or oversized document needs it.
+    func decodePDF(_ url: URL, remainingPixels: Int = DocumentLimits.documentPixelBudget) throws -> [ImportedImage] {
+        guard let document = PDFDocument(url: url), document.pageCount > 0 else { throw ImageImportError.unreadablePDF }
+        guard !document.isLocked else { throw ImageImportError.pdfLocked }
+        let name = url.deletingPathExtension().lastPathComponent
+        let budget = max(1, remainingPixels / document.pageCount)
+        return try (0..<document.pageCount).map { index in
+            guard let page = document.page(at: index) else { throw ImageImportError.unreadablePDF }
+            return try autoreleasepool {
+                let box = page.bounds(for: .mediaBox)
+                guard box.width > 0, box.height > 0 else { throw ImageImportError.unreadablePDF }
+                let scale = min(2, DocumentLimits.maxSideExtent / box.width, DocumentLimits.maxSideExtent / box.height,
+                                (CGFloat(budget) / (box.width * box.height)).squareRoot())
+                let width = Int((box.width * scale).rounded()), height = Int((box.height * scale).rounded())
+                guard width >= 1, height >= 1 else { throw ImageImportError.tooLarge }
+                let context = try BrushRaster.context(width: width, height: height, mask: false)
+                context.setFillColor(CGColor(gray: 1, alpha: 1))
+                context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+                // Layer pixels are stored top row first; PDFKit draws bottom-up, so the drawing is turned over
+                // to match, scaled from points to pixels.
+                context.translateBy(x: 0, y: CGFloat(height))
+                context.scaleBy(x: scale, y: -scale)
+                page.draw(with: .mediaBox, to: context)
+                guard let image = context.makeImage() else { throw ImageImportError.unreadablePDF }
+                return ImportedImage(image: image, thumbnail: try PixelAdjust.thumbnail(of: image),
+                                     name: document.pageCount > 1 ? "\(name) 第 \(index + 1) 页" : name)
+            }
+        }
     }
 
     /// `flattenedPhotoshop`: a PSD or PSB with no layer records (only a background), read as its merged image.
