@@ -56,7 +56,7 @@ struct GridSettingsSheet: View {
             HStack {
                 Text("颜色").frame(width: 110, alignment: .leading)
                 Picker("颜色", selection: $appearance.preset) {
-                    ForEach(GridAppearance.Preset.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(GridAppearance.Preset.allCases) { Text($0.displayName).tag($0) }
                 }.labelsHidden()
                 DialogColorSwatch(title: "网格颜色", color: swatchColor, session: session)
                     .help("选取自定义网格颜色")
@@ -64,7 +64,7 @@ struct GridSettingsSheet: View {
             HStack {
                 Text("样式").frame(width: 110, alignment: .leading)
                 Picker("样式", selection: $appearance.style) {
-                    ForEach(GridAppearance.Style.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(GridAppearance.Style.allCases) { Text($0.displayName).tag($0) }
                 }.labelsHidden()
             }
             HStack {
@@ -121,5 +121,33 @@ struct GridSettingsSheet: View {
         .onChange(of: appearance.preset) { _, preset in if preset != .custom { pickedFrom = nil } }
         .onChange(of: spacing) { if valid { preview(grid, appearance) } }
         .onChange(of: subdivisions) { if valid { preview(grid, appearance) } }
+    }
+}
+
+/// Chinese picker labels; the raw values are stored in user defaults, so they stay English.
+private extension GridAppearance.Preset {
+    var displayName: String {
+        switch self {
+        case .lightGray: "浅灰色"
+        case .lightBlue: "浅蓝色"
+        case .lightRed: "浅红色"
+        case .green: "绿色"
+        case .mediumBlue: "中蓝色"
+        case .yellow: "黄色"
+        case .magenta: "洋红"
+        case .cyan: "青色"
+        case .black: "黑色"
+        case .custom: "自定"
+        }
+    }
+}
+
+private extension GridAppearance.Style {
+    var displayName: String {
+        switch self {
+        case .lines: "直线"
+        case .dashedLines: "虚线"
+        case .dots: "网点"
+        }
     }
 }

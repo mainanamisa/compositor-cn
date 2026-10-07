@@ -50,7 +50,7 @@ struct SelectionEditTests {
         session.selectTool(.brush)
         session.beginBrush(at: CGPoint(x: 5, y: 20))
         // Refused out loud, not silently: the selection that's in the way can't be seen.
-        #expect(session.brushError?.contains("Deselect") == true)
+        #expect(session.brushError?.contains("取消选择") == true)
         session.brushError = nil
         session.continueBrush(at: CGPoint(x: 95, y: 20))
         await session.finishBrush()
@@ -83,7 +83,7 @@ struct SelectionEditTests {
         select(session, CGRect(x: 20, y: 10, width: 30, height: 20))
         let count = session.history.undoCount
         await session.fillSelection(with: .foreground)
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Fill")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "填充")
         var result = try await render(session)
         #expect(try pixel(result, x: 30, y: 20) == [255, 0, 0, 255])
         #expect(try pixel(result, x: 5, y: 5)[3] == 0)
@@ -100,7 +100,7 @@ struct SelectionEditTests {
         await session.fillSelection(with: .foreground) // Whole layer red.
         select(session, CGRect(x: 20, y: 10, width: 30, height: 20))
         await session.clearSelectedPixels()
-        #expect(session.history.undoName == "Clear")
+        #expect(session.history.undoName == "清除")
         let result = try await render(session)
         #expect(try pixel(result, x: 30, y: 20)[3] == 0)
         #expect(try pixel(result, x: 5, y: 5) == [255, 0, 0, 255])
@@ -120,7 +120,7 @@ struct SelectionEditTests {
         select(session, CGRect(x: 20, y: 10, width: 30, height: 20))
         // Mask palette: foreground black (hide), background white (reveal).
         await session.fillSelection(with: .foreground)
-        #expect(session.history.undoName == "Fill Mask")
+        #expect(session.history.undoName == "填充蒙版")
         var result = try await render(session)
         #expect(try pixel(result, x: 30, y: 20)[3] == 0)
         #expect(try pixel(result, x: 5, y: 5)[3] == 255)
@@ -162,14 +162,14 @@ struct SelectionEditTests {
         session.setPaletteColor(red, background: false)
         await session.fillSelection(with: .foreground) // Whole layer red.
         session.addMask()
-        #expect(session.activeLayer?.mask != nil && session.history.undoName == "Add Reveal-All Mask")
+        #expect(session.activeLayer?.mask != nil && session.history.undoName == "添加显示全部蒙版")
         #expect(try pixel(try await render(session), x: 30, y: 20)[3] == 255)
         session.undo()
         #expect(session.activeLayer?.mask == nil)
 
         select(session, CGRect(x: 20, y: 10, width: 30, height: 20))
         session.addMask()
-        #expect(session.history.undoName == "Reveal Selection")
+        #expect(session.history.undoName == "显示选区")
         #expect(session.selection == nil && session.isMaskSelected)
         let result = try await render(session)
         #expect(try pixel(result, x: 30, y: 20)[3] == 255)   // Selected area: white, visible.
@@ -185,7 +185,7 @@ struct SelectionEditTests {
         await session.fillSelection(with: .foreground) // Whole layer red.
         select(session, CGRect(x: 20, y: 10, width: 30, height: 20))
         session.addMask(revealing: false)
-        #expect(session.history.undoName == "Hide Selection")
+        #expect(session.history.undoName == "隐藏选区")
         #expect(session.selection == nil && session.isMaskSelected)
         let result = try await render(session)
         #expect(try pixel(result, x: 30, y: 20)[3] == 0)     // Selected area: black, hidden.
@@ -195,7 +195,7 @@ struct SelectionEditTests {
 
         session.deselect()
         session.addMask(revealing: false)                    // No selection: a plain black mask.
-        #expect(session.history.undoName == "Add Hide-All Mask")
+        #expect(session.history.undoName == "添加隐藏全部蒙版")
         #expect(try pixel(try await render(session), x: 30, y: 20)[3] == 0)
     }
 
@@ -225,7 +225,7 @@ struct SelectionEditTests {
         #expect(session.isMaskSelected)
         session.deleteKeyPressed()
         #expect(session.activeLayer?.id == id && session.activeLayer?.mask == nil)
-        #expect(session.history.undoName == "Delete Layer Mask" && !session.isMaskSelected)
+        #expect(session.history.undoName == "删除图层蒙版" && !session.isMaskSelected)
         session.undo()
         #expect(session.activeLayer?.mask != nil)
         // The trash button follows the same target.
@@ -258,7 +258,7 @@ struct SelectionEditTests {
         session.movePixels(by: CGSize(width: 30.4, height: 0))
         session.movePixels(by: CGSize(width: 60.2, height: 5))
         await session.finishPixelMove()
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Move Pixels")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "移动像素")
         #expect(session.selection?.path.boundingBoxOfPath == CGRect(x: 70, y: 15, width: 10, height: 10))
         let result = try await render(session)
         #expect(try pixel(result, x: 15, y: 15)[3] == 0)                 // Hole where the pixels were.
@@ -282,7 +282,7 @@ struct SelectionEditTests {
         #expect(try pixel(result, x: 15, y: 15)[0] > 250)
         #expect(try pixel(result, x: 75, y: 20)[0] > 250)
         #expect(session.history.undoCount == count + 1)
-        #expect(session.history.undoName == "Duplicate Pixels")
+        #expect(session.history.undoName == "复制像素")
         session.undo()
         let restored = try await render(session)
         #expect(try pixel(restored, x: 15, y: 15)[0] > 250)
@@ -307,7 +307,7 @@ struct SelectionEditTests {
         try await twoColorLayer(session)
         select(session, CGRect(x: 0, y: 0, width: 100, height: 20)) // Top half only.
         await session.invertPixels()
-        #expect(session.history.undoName == "Invert")
+        #expect(session.history.undoName == "反相")
         var result = try await render(session)
         #expect(try pixel(result, x: 10, y: 5) == [0, 255, 255, 255])    // Red → cyan.
         #expect(try pixel(result, x: 90, y: 5) == [255, 255, 0, 255])    // Blue → yellow.
@@ -326,7 +326,7 @@ struct SelectionEditTests {
         // On a mask, black and white swap: an all-white mask inverts to hide everything.
         session.addLayerMask()
         await session.invertPixels()
-        #expect(session.history.undoName == "Invert Mask")
+        #expect(session.history.undoName == "反相蒙版")
         result = try await render(session)
         #expect(try pixel(result, x: 50, y: 30)[3] == 0)
     }
@@ -402,7 +402,7 @@ struct SelectionEditTests {
         }
         session.selectTool(.crop)
         await session.invertPixels()
-        #expect(session.history.undoName == "Invert")
+        #expect(session.history.undoName == "反相")
         #expect(try pixel(try await render(session), x: 10, y: 5) == [0, 255, 255, 255])
         // A pending gradient is applied first, then inverted.
         session.selectTool(.gradient)
@@ -410,8 +410,8 @@ struct SelectionEditTests {
         session.moveGradient(end: CGPoint(x: 100, y: 20))
         #expect(session.gradientEdit != nil && session.canInvert)
         await session.invertPixels()
-        #expect(session.gradientEdit == nil && session.history.undoName == "Invert")
+        #expect(session.gradientEdit == nil && session.history.undoName == "反相")
         session.undo()
-        #expect(session.history.undoName == "Gradient")
+        #expect(session.history.undoName == "渐变")
     }
 }

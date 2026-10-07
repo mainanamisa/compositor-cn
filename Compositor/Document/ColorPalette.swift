@@ -269,7 +269,7 @@ enum ColorPickerTarget: Equatable {
     var title: String {
         switch self {
         case .text: return "拾色器（文字颜色）"
-        case .effect(let kind): return "拾色器（\(kind.rawValue)颜色）"
+        case .effect(let kind): return "拾色器（\(kind.displayName)颜色）"
         case .palette(let background): return background ? "拾色器（背景颜色）" : "拾色器（前景颜色）"
         case .gradientMap(let highlights): return highlights ? "拾色器（渐变映射高光）" : "拾色器（渐变映射阴影）"
         case .vignette: return "拾色器（晕影颜色）"

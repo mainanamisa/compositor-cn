@@ -53,9 +53,9 @@ struct SelectionClipboardTests {
         let count = session.history.undoCount
         #expect(session.canPaste)
         session.paste()
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Paste")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "粘贴")
         let pasted = try #require(session.activeLayer)
-        #expect(pasted.id != source && pasted.name == "Layer 2" && session.selection == nil)
+        #expect(pasted.id != source && pasted.name == "图层 2" && session.selection == nil)
         #expect(pasted.transform.origin == CGPoint(x: 40, y: 10) && pasted.size == CGSize(width: 20, height: 20))
         #expect(try await layerPixel(session, pasted.id, x: 45, y: 15) == [255, 0, 0, 255])
         #expect(try await layerPixel(session, pasted.id, x: 55, y: 15) == [0, 0, 255, 255])
@@ -80,12 +80,12 @@ struct SelectionClipboardTests {
         let source = try #require(session.activeLayer)
         select(session, CGRect(x: 60, y: 0, width: 10, height: 40))
         session.layerViaCopy()
-        #expect(session.history.undoName == "Layer via Copy" && session.document?.layers.count == 2)
+        #expect(session.history.undoName == "通过拷贝的图层" && session.document?.layers.count == 2)
         #expect(session.activeLayer?.size == CGSize(width: 10, height: 40) && session.selection == nil,
                 "size \(String(describing: session.activeLayer?.size))")
         session.selectLayer(source.id)
         session.layerViaCopy()
-        #expect(session.history.undoName == "Duplicate Layer" && session.activeLayer?.name == "\(source.name) copy")
+        #expect(session.history.undoName == "复制图层" && session.activeLayer?.name == "\(source.name) 副本")
         #expect(session.activeLayer?.asset?.image === source.asset?.image)
     }
 
@@ -103,7 +103,7 @@ struct SelectionClipboardTests {
         session.previewTransform(draft)
         #expect(session.displayedSelection?.path.boundingBoxOfPath == CGRect(x: 70, y: 20, width: 10, height: 10))
         session.commitTransform()
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Transform Selection")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "变换选区")
         #expect(session.document?.layers.count == 1 && session.activeLayerID == source)
         #expect(session.selection?.path.boundingBoxOfPath == CGRect(x: 70, y: 20, width: 10, height: 10))
         let result = try await render(session)
@@ -150,7 +150,7 @@ struct SelectionClipboardTests {
         draft.origin = CGPoint(x: 90, y: 30)          // …and hanging off the canvas corner.
         session.previewTransform(draft)
         session.selectTool(.lasso)                    // Switching tools applies it.
-        #expect(session.transformEdit == nil && session.history.undoName == "Transform Selection")
+        #expect(session.transformEdit == nil && session.history.undoName == "变换选区")
         let layer = try #require(session.document?.layers.first { $0.id == source })
         #expect(layer.size == CGSize(width: 110, height: 50))
         let result = try await render(session)
@@ -166,7 +166,7 @@ struct SelectionClipboardTests {
         session.beginLasso(at: CGPoint(x: 10, y: 5), mode: .replace)
         for point in [CGPoint(x: 40, y: 5), CGPoint(x: 10, y: 35)] { session.extendLasso(to: point) }
         session.finishLasso()
-        #expect(session.history.undoName == "Lasso" && session.canCopyPixels)
+        #expect(session.history.undoName == "套索" && session.canCopyPixels)
         session.copySelection()
         session.paste()
         let pasted = try #require(session.activeLayer)

@@ -69,9 +69,9 @@ struct SelectionTests {
         let session = makeSession()
         let count = session.history.undoCount
         lasso(session, square(10, 10, 40))
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Lasso")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "套索")
         lasso(session, [CGPoint(x: 5, y: 5)])
-        #expect(session.selection == nil && session.history.undoName == "Deselect")
+        #expect(session.selection == nil && session.history.undoName == "取消选择")
         session.undo()
         #expect(session.selection?.isEmpty == false)
         session.undo()
@@ -91,7 +91,7 @@ struct SelectionTests {
         session.extendLasso(to: CGPoint(x: 10, y: 90))
         #expect(session.lassoDraft?.points.count == 4)
         session.finishLasso()
-        #expect(session.history.undoName == "Polygonal Lasso")
+        #expect(session.history.undoName == "多边形套索")
         #expect(try coverage(session, 80, 80) == 255 && coverage(session, 5, 50) == 0)
         session.beginLasso(at: CGPoint(x: 1, y: 1), mode: .replace)
         session.cancelLasso()
@@ -164,7 +164,7 @@ struct SelectionTests {
         session.moveSelection(by: CGSize(width: 10.4, height: 29.6))
         session.moveSelection(by: CGSize(width: 40.2, height: 40.4))
         session.endSelectionMove()
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Move Selection")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "移动选区")
         #expect(session.selection?.path.boundingBoxOfPath == CGRect(x: 50, y: 50, width: 20, height: 20))
         #expect(try coverage(session, 55, 55) == 255 && coverage(session, 15, 15) == 0)
         session.undo()
@@ -207,7 +207,7 @@ struct SelectionTests {
         lasso(session, square(40, 40, 20))
         #expect(session.canModifySelection)
         session.expandSelection(by: 5)
-        #expect(session.history.undoName == "Expand Selection")
+        #expect(session.history.undoName == "扩展选区")
         let grown = try #require(session.selection).path.boundingBoxOfPath
         #expect(abs(grown.minX - 35) < 0.01 && abs(grown.width - 30) < 0.01)
         #expect(try coverage(session, 37, 50) == 255 && coverage(session, 33, 50) == 0)
@@ -251,7 +251,7 @@ struct SelectionTests {
         let session = makeSession()
         let id = try maskedLayer(session)
         session.loadMaskSelection(layerID: id)
-        #expect(session.history.undoName == "Load Mask Selection")
+        #expect(session.history.undoName == "载入蒙版选区")
         #expect(try coverage(session, 25, 35) == 255)   // Black: selected.
         #expect(try coverage(session, 35, 45) == 0)     // White hole: not selected.
         #expect(try coverage(session, 80, 80) == 0)     // White surroundings.
@@ -295,7 +295,7 @@ struct SelectionTests {
         let index = try #require(session.document?.layers.firstIndex { $0.id == id })
         session.document?.layers[index].transform = LayerTransform(origin: CGPoint(x: 50, y: 50), size: CGSize(width: 100, height: 100))
         session.loadLayerSelection(layerID: id)
-        #expect(session.history.undoName == "Load Layer Selection")
+        #expect(session.history.undoName == "载入图层选区")
         #expect(session.selection?.path.boundingBoxOfPath == CGRect(x: 70, y: 70, width: 60, height: 60)) // 2× scale.
         #expect(try coverage(session, 75, 75) == 255)   // Opaque ring.
         #expect(try coverage(session, 100, 100) == 0)   // Transparent center.
@@ -320,7 +320,7 @@ struct SelectionTests {
         let session = makeSession()
         session.selectTool(.marquee)
         marquee(session, from: CGPoint(x: 60.4, y: 70.6), to: CGPoint(x: 20.2, y: 30.3))
-        #expect(session.history.undoName == "Rectangular Marquee")
+        #expect(session.history.undoName == "矩形选框")
         #expect(session.selection?.path.boundingBoxOfPath == CGRect(x: 20, y: 30, width: 40, height: 41))
         #expect(try coverage(session, 20, 30) == 255 && coverage(session, 19, 30) == 0)
         marquee(session, from: CGPoint(x: 80, y: 80), to: CGPoint(x: 90, y: 90), mode: .add)

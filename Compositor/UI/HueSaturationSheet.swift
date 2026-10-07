@@ -34,7 +34,7 @@ struct HueSaturationSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Picker("范围", selection: settings.range) {
-                    ForEach(ColorRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(ColorRange.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
                 .pickerStyle(.menu).frame(width: 160).labelsHidden().disabled(current.colorize)
                 Spacer()
@@ -88,7 +88,7 @@ struct HueSaturationSheet: View {
                     .background(session.hueSampleMode == mode ? Color.accentColor.opacity(0.25) : .clear,
                                 in: RoundedRectangle(cornerRadius: 4))
                     .help(mode.help)
-                    .accessibilityLabel("\(mode.rawValue) color")
+                    .accessibilityLabel("\(mode.rawValue)颜色")
                 }
                 Divider().frame(height: 16)
             }
@@ -206,5 +206,21 @@ struct SpectrumEditor: View {
             return min(gap, 360 - gap)
         }
         return distances.firstIndex(of: distances.min() ?? 0) ?? 0
+    }
+}
+
+/// Chinese range names for the picker; the raw values stay English because ColorRange is
+/// Codable and stored in project files.
+private extension ColorRange {
+    var displayName: String {
+        switch self {
+        case .master: "全图"
+        case .reds: "红色"
+        case .yellows: "黄色"
+        case .greens: "绿色"
+        case .cyans: "青色"
+        case .blues: "蓝色"
+        case .magentas: "洋红"
+        }
     }
 }

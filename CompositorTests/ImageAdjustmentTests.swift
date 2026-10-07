@@ -164,7 +164,7 @@ struct ImageAdjustmentTests {
         session.updateFilter(settings, preview: true)
         let count = session.history.undoCount
         await session.commitFilter()
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Exposure")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "曝光")
         let result = try pixels(try #require(session.activeLayer?.asset?.image))[0]
         #expect(abs(result[0] - 176) <= 2, "\(result)")
         #expect(FilterKind.exposure.isImageAdjustment && !FilterKind.gaussianBlur.isImageAdjustment)

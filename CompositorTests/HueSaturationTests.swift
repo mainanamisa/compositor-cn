@@ -92,7 +92,7 @@ struct HueSaturationTests {
                                mode: .replace, name: "Select")
         let count = session.history.undoCount
         await apply(session, HueSaturationSettings(hue: 120))
-        #expect(session.history.undoCount == count + 1 && session.history.undoName == "Hue/Saturation")
+        #expect(session.history.undoCount == count + 1 && session.history.undoName == "色相/饱和度")
         #expect(near(try await pixel(session, x: 5, y: 5), [0, 255, 0, 255]))     // Inside: rotated.
         #expect(near(try await pixel(session, x: 15, y: 5), [255, 0, 0, 255]))    // Outside: untouched.
         session.undo()

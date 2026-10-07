@@ -101,7 +101,7 @@ struct LevelsTests {
         #expect(session.document == before && session.history.undoCount == count)
         session.beginLevels(); session.updateLevels(settings, preview: false)
         await session.commitLevels()
-        #expect(session.history.undoCount == count+1 && session.history.undoName == "Levels")
+        #expect(session.history.undoCount == count+1 && session.history.undoName == "色阶")
         let committed = try #require(session.activeLayer?.asset?.image)
         #expect(try bytes(committed) == preview)
         session.undo(); #expect(session.document == before)
