@@ -19,9 +19,9 @@
 
 ## 界面截图
 
-| 新建画布 | 编辑器主界面 | 画笔工具 |
+| 新建画布 |
 |---|---|---|
-| ![新建画布](docs/screenshots/01-新建画布.jpg) | ![编辑器主界面](docs/screenshots/02-编辑器主界面.jpg) | ![画笔工具](docs/screenshots/03-画笔工具.jpg) |
+| ![新建画布](docs/screenshots/01-新建画布.jpg) | 
 >
 > 以下为上游原版 README。
 
