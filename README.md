@@ -1,3 +1,18 @@
+# Compositor 中文版（汉化版）
+
+> 这是 [robbietilton/Compositor](https://github.com/robbietilton/Compositor) 的简体中文本地化分支。上游项目由 Robbie Tilton 开发，采用 MIT 协议（见 LICENSE）。
+>
+> **下载安装**：见 [Releases](../../releases) 页面的 DMG。因为安装包没有 Apple 开发者签名/公证，首次打开需在「系统设置 › 隐私与安全性」里选择「仍要打开」。
+>
+> 本分支的差异：
+> - 全部界面文字汉化（菜单、面板、弹窗、撤销动作名、PSD 导入报告等，术语对齐 Photoshop 中文版）
+> - 项目文件（.comp）与 PSD 的存储格式保持英文不变，与上游完全互通
+> - 移除了 Sparkle 自动更新（避免更新回英文版）
+>
+> 以下为上游原版 README。
+
+---
+
 # Compositor
 
 Adobe Photoshop costs too much and tools like GIMP don’t feel familiar enough for me to stay in flow. That’s why I built Compositor.
