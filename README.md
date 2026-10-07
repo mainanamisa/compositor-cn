@@ -19,9 +19,8 @@
 
 ## 界面截图
 
-| 新建画布 |
-|---|---|---|
-| ![新建画布](docs/screenshots/01-新建画布.jpg) | 
+
+![新建画布](docs/screenshots/01-新建画布.jpg) 
 >
 > 以下为上游原版 README。
 
