@@ -42,7 +42,7 @@ struct NewCanvasSheet: View {
                             .padding(.trailing, -10)
                     }
                     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                    .help("屏幕与常见格式的预设尺寸")
+                    .help("屏幕、印刷与常见格式的预设尺寸")
                     .accessibilityLabel("预设尺寸")
                 }
             }
@@ -143,6 +143,16 @@ struct CanvasPreset: Identifiable, Hashable {
             CanvasPreset(title: "Instagram 竖向", width: 1080, height: 1350),
             CanvasPreset(title: "Instagram 快拍", width: 1080, height: 1920),
             CanvasPreset(title: "YouTube 缩略图", width: 1080, height: 608),
+        ],
+        // Print sizes as pixels at 300 DPI, upright (portrait) except the business card.
+        [
+            CanvasPreset(title: "A3 印刷 · 300 DPI", width: 3508, height: 4961),
+            CanvasPreset(title: "A4 印刷 · 300 DPI", width: 2480, height: 3508),
+            CanvasPreset(title: "A5 印刷 · 300 DPI", width: 1748, height: 2480),
+            CanvasPreset(title: "A6 印刷 · 300 DPI", width: 1240, height: 1748),
+            CanvasPreset(title: "B4 印刷 · 300 DPI", width: 2953, height: 4195),
+            CanvasPreset(title: "B5 印刷 · 300 DPI", width: 2079, height: 2953),
+            CanvasPreset(title: "名片 · 300 DPI", width: 1063, height: 638),
         ],
     ]
     static let all = groups.flatMap { $0 }
