@@ -25,7 +25,7 @@ final class DocumentHistory {
     let entryLimit: Int
     let retainedByteLimit: Int
 
-    init(entryLimit: Int = 100, retainedByteLimit: Int = 256 * 1024 * 1024) {
+    init(entryLimit: Int = 100, retainedByteLimit: Int = 1024 * 1024 * 1024) {
         self.entryLimit = max(0, entryLimit)
         self.retainedByteLimit = max(0, retainedByteLimit)
         savedRevision = revision
