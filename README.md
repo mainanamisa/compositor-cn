@@ -4,7 +4,14 @@
 >
 > This is an **unofficial** Simplified Chinese localization of [robbietilton/Compositor](https://github.com/robbietilton/Compositor), not affiliated with the upstream author. The upstream project is developed by Robbie Tilton and licensed under MIT (see LICENSE).
 >
-> **下载安装**：见 [Releases](../../releases) 页面的 DMG。因为安装包没有 Apple 开发者签名/公证，首次打开需在「系统设置 › 隐私与安全性」里选择「仍要打开」。
+> **下载安装**：见 [Releases](../../releases) 页面的 DMG，提供两个版本：
+>
+> | 版本 | 文件 | 说明 |
+> | --- | --- | --- |
+> | 纯汉化版 | `Compositor-1.4.5-CN-L10n.dmg` | 只翻译界面，功能与上游 v1.4.5 完全一致，适合想要「原版体验 + 中文」的用户 |
+> | 汉化增强版 | `Compositor-1.4.5-CN-Plus.dmg` | 汉化 + 下方「本分支新增功能」的全部内容（印刷尺寸、多格式导出、PDF 导入、移除工具等） |
+>
+> 因为安装包没有 Apple 开发者签名/公证，首次打开需在「系统设置 › 隐私与安全性」里选择「仍要打开」。
 >
 > 本分支的差异：
 > - 全部界面文字汉化（菜单、面板、弹窗、撤销动作名、PSD 导入报告等，术语对齐 Photoshop 中文版）
@@ -17,6 +24,7 @@
 - **多格式导出「导出为…」（⌥⌘E）**：PNG / JPEG / HEIC / TIFF / GIF / BMP / PDF 七种格式，带实时预览、质量滑块（JPEG/HEIC）、文件大小预估、透明区域背景色设置；PNG/HEIC/TIFF/PDF 保留透明
 - **PDF 导入**：直接把 PDF 拖入窗口即可打开，多页 PDF 每页自动建成一个图层（如「文档 第 1 页」），按 2 倍（144 DPI）渲染保证清晰度；加密或损坏的 PDF 有中文错误提示
 - **移除工具（K）**：对标 Photoshop 的移除工具——在不想要的内容上涂抹，松手后由本地 AI 模型（LaMa，Core ML 加速）按周围背景智能补全，结果写回图层、可 ⌘Z 撤销。模型约 200 MB，首次使用时从本仓库的 Releases 下载一次（带进度、断点续传和 SHA-256 校验），全程离线运行、不上传图像
+- **撤销历史内存可调**：设置窗口（⌘,）中可将撤销历史的内存上限在 256 MB – 4 GB 之间调整（默认 1 GB），大图编辑不再轻易丢历史
 
 ## 界面截图
 
