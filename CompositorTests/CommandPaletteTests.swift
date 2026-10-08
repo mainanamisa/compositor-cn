@@ -57,15 +57,15 @@ struct CommandPaletteTests {
         let bar = try #require(NSApp.mainMenu)
         func entries() -> [CommandPaletteEntry] { CommandPaletteMenu.entries(in: bar, skipping: CommandPaletteController.skipped) }
         func gridState() -> NSControl.StateValue? {
-            bar.items.first { $0.title == "View" }?.submenu?.items.first { $0.title == "Pixel Grid (800% and above)" }?.state
+            bar.items.first { $0.title == "显示" }?.submenu?.items.first { $0.title == "像素网格（800% 及以上）" }?.state
         }
         let listed = entries()
         let titles = Set(listed.map(\.title))
-        #expect(titles.contains("Filter › Gaussian Blur…") && !titles.contains("View › Command Palette…"))
+        #expect(titles.contains("滤镜 › 高斯模糊…") && !titles.contains("显示 › 命令面板…"))
         // The test host has no document open, so Zoom In is disabled: listed, greyed.
-        let zoom = try #require(listed.first { $0.title == "View › Zoom In" })
+        let zoom = try #require(listed.first { $0.title == "显示 › 放大" })
         #expect(!zoom.isEnabled)
-        let grid = try #require(listed.first { $0.title == "View › Pixel Grid (800% and above)" })
+        let grid = try #require(listed.first { $0.title == "显示 › 像素网格（800% 及以上）" })
         let before = try #require(gridState())
         grid.perform()
         try await Task.sleep(for: .milliseconds(300))
