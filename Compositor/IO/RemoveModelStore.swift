@@ -5,10 +5,10 @@ import Observation
 /// The LaMa inpainting model the Remove tool needs: not bundled (196 MB), but downloaded once into
 /// Application Support on first use, with progress, a checksum check and a retry on failure.
 ///
-/// The zip is the pinned LaMa Core ML backup on GitHub Releases (the original is jerhoads/lama-coreml
-/// on Hugging Face; LaMa weights are Apache-2.0). The SHA-256 below pins the bytes, so the mirror
-/// can't swap them. The API asset URL is the fallback: github.com's release-redirect host is
-/// unreachable from some networks while api.github.com still answers.
+/// The zip is self-hosted on this fork's GitHub Releases (the model itself is jerhoads/lama-coreml
+/// on Hugging Face; LaMa weights are Apache-2.0). The SHA-256 below pins the bytes, so a swapped or
+/// truncated download is rejected before unpacking. The API asset URL is the fallback: github.com's
+/// release-redirect host is unreachable from some networks while api.github.com still answers.
 @MainActor @Observable
 final class RemoveModelStore {
     static let shared = RemoveModelStore()
@@ -29,10 +29,10 @@ final class RemoveModelStore {
     nonisolated static var isAvailable: Bool { FileManager.default.fileExists(atPath: modelURL.path) }
     private nonisolated static let zipURL = directory.appendingPathComponent("LaMa.mlpackage.zip")
     /// SHA-256 of LaMa.mlpackage.zip, from the release's own SHA256SUMS.
-    private nonisolated static let zipSHA256 = "a9770746e299a643aa754cde9985ddbcb2be02593a48d092481c7ec33d963b90"
+    private nonisolated static let zipSHA256 = "d0f4ef099b68f592bf7d2c8f601c546cc1ed97675914d4c3eeae2755df28c8f6"
     private nonisolated static let downloadURLs = [
-        URL(string: "https://github.com/VaderChen/LaMa-CoreML/releases/download/lama-5ed76e3/LaMa.mlpackage.zip")!,
-        URL(string: "https://api.github.com/repos/VaderChen/LaMa-CoreML/releases/assets/587903324")!
+        URL(string: "https://github.com/mainanamisa/compositor-cn/releases/download/v1.4.5-cn/LaMa.mlpackage.zip")!,
+        URL(string: "https://api.github.com/repos/mainanamisa/compositor-cn/releases/assets/620760761")!
     ]
 
     enum Failure: LocalizedError {
