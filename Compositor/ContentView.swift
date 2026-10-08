@@ -4,6 +4,11 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     /// The Layers panel's width, remembered across launches.
     @AppStorage("layersPanelWidth") private var layersPanelWidth = 252.0
+    /// The tool last chosen within the rail's repair group (Spot Healing / Remove / Clone Stamp), so its slot
+    /// keeps showing it, as Photoshop's grouped tools do.
+    @AppStorage("repairTool") private var lastRepairTool = NavigationTool.spotHealing.rawValue
+    /// Same for the navigation group (Hand / Zoom).
+    @AppStorage("navigationTool") private var lastNavigationTool = NavigationTool.hand.rawValue
     @Bindable var session: EditorSession
     var applicationDelegate: CompositorApplicationDelegate? = nil
     @Environment(\.openWindow) private var openWindow
@@ -302,31 +307,8 @@ struct ContentView: View {
         // Scrolls when the window is too short for every tool, rather than pushing the bars above and below away.
         IndicatorlessScrollView {
         VStack(spacing: 10) {
-            ForEach(NavigationTool.allCases.filter { $0 != .idle }, id: \.self) { tool in
-                Button { session.selectTool(tool) } label: {
-                    Group {
-                        if tool == .gradient { GradientToolIcon().frame(width: 18, height: 18) }
-                        else if tool == .cloneStamp { CloneStampToolIcon().frame(width: 18, height: 18) }
-                        else if tool == .lasso, session.lassoKind == .polygonal { PolygonalLassoToolIcon().frame(width: 18, height: 18) }
-                        else if tool == .wand, session.wandMode == .object { ObjectSelectionToolIcon().frame(width: 18, height: 18) }
-                        // "textformat" has a Chinese variant (格式) that Apple swaps in when the app localizes to
-                        // zh-Hans; the type tool keeps the Latin "Aa" instead.
-                        else if tool == .type { Text("Aa").font(.system(size: 16, weight: .medium)) }
-                        // The Marquee's icon follows its shape: a dashed circle in Ellipse mode.
-                        else { Image(systemName: tool == .marquee && session.marqueeKind == .ellipse ? "circle.dashed" : session.symbol(for: tool)).font(.system(size: 17)) }
-                    }
-                    .frame(width: 36, height: 36)
-                        .background(session.tool == tool ? Color.white.opacity(0.12) : .clear,
-                                    in: RoundedRectangle(cornerRadius: 7))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 7)
-                                .strokeBorder(session.tool == tool ? Color.white.opacity(0.14) : .clear)
-                        }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).help(tool.label).accessibilityLabel(tool.label)
-                .foregroundStyle(.primary)
-                .accessibilityAddTraits(session.tool == tool ? .isSelected : [])
+            ForEach(Self.toolSlots) { slot in
+                toolButton(slot)
             }
             ColorPaletteControls(session: session).padding(.top, 8)
         }
@@ -334,6 +316,78 @@ struct ContentView: View {
         .frame(width: 56)
         }
         .frame(width: 56)
+    }
+    /// One rail slot: a button for the tool in use in its group, with a small corner triangle when the group
+    /// holds more. Clicking activates it; right-clicking lists the group's modes and sibling tools, each with
+    /// its key — the modes that used to hide behind Tab or Shift-key presses become visible choices.
+    @ViewBuilder
+    private func toolButton(_ slot: ToolSlot) -> some View {
+        let tool = representativeTool(for: slot)
+        let selected = slot.tools.contains(session.tool)
+        Button { selectSlot(slot) } label: {
+            toolIcon(tool)
+                .frame(width: 36, height: 36)
+                .background(selected ? Color.white.opacity(0.12) : .clear,
+                            in: RoundedRectangle(cornerRadius: 7))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(selected ? Color.white.opacity(0.14) : .clear)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if !slot.flyout.isEmpty {
+                        Image(systemName: "arrowtriangle.down.fill")
+                            .font(.system(size: 5))
+                            .foregroundStyle(.secondary)
+                            .padding(4)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(slot.flyout.isEmpty ? tool.label : "\(tool.label) · 右键选择同类工具").accessibilityLabel(tool.label)
+        .foregroundStyle(.primary)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .contextMenu {
+            ForEach(slot.flyout) { item in
+                Button { selectFlyout(item) } label: {
+                    Label("\(item.name) (\(item.key))", systemImage: item.isActive(session) ? "checkmark" : "")
+                }
+            }
+        }
+    }
+    /// What a slot's button shows and activates: the group's tool when it's in hand, else the group's last-used
+    /// choice for the groups of distinct tools, else the group's default.
+    private func representativeTool(for slot: ToolSlot) -> NavigationTool {
+        if slot.tools.contains(session.tool) { return session.tool }
+        if slot.tools.contains(.spotHealing) { return NavigationTool(rawValue: lastRepairTool) ?? .spotHealing }
+        if slot.tools.contains(.hand) { return NavigationTool(rawValue: lastNavigationTool) ?? .hand }
+        return slot.tools[0]
+    }
+    private func selectSlot(_ slot: ToolSlot) {
+        let tool = representativeTool(for: slot)
+        session.selectTool(tool)
+        rememberGroupChoice(tool)
+    }
+    private func selectFlyout(_ item: ToolSlot.FlyoutItem) {
+        session.selectTool(item.tool)
+        // Only once the tool is in hand, as its own Tab or key would switch it.
+        if session.tool == item.tool { item.setup(session) }
+        rememberGroupChoice(item.tool)
+    }
+    private func rememberGroupChoice(_ tool: NavigationTool) {
+        if tool == .spotHealing || tool == .remove || tool == .cloneStamp { lastRepairTool = tool.rawValue }
+        if tool == .hand || tool == .zoom { lastNavigationTool = tool.rawValue }
+    }
+    @ViewBuilder
+    private func toolIcon(_ tool: NavigationTool) -> some View {
+        if tool == .gradient { GradientToolIcon().frame(width: 18, height: 18) }
+        else if tool == .cloneStamp { CloneStampToolIcon().frame(width: 18, height: 18) }
+        else if tool == .lasso, session.lassoKind == .polygonal { PolygonalLassoToolIcon().frame(width: 18, height: 18) }
+        else if tool == .wand, session.wandMode == .object { ObjectSelectionToolIcon().frame(width: 18, height: 18) }
+        // "textformat" has a Chinese variant (格式) that Apple swaps in when the app localizes to
+        // zh-Hans; the type tool keeps the Latin "Aa" instead.
+        else if tool == .type { Text("Aa").font(.system(size: 16, weight: .medium)) }
+        // The Marquee's icon follows its shape: a dashed circle in Ellipse mode.
+        else { Image(systemName: tool == .marquee && session.marqueeKind == .ellipse ? "circle.dashed" : session.symbol(for: tool)).font(.system(size: 17)) }
     }
     private var welcome: some View {
         NewCanvasSheet(session: session,
@@ -364,6 +418,70 @@ struct ContentView: View {
         .padding(.horizontal, 18).frame(height: 30)
         .accessibilityElement(children: .contain)
     }
+}
+
+/// One slot in the tool rail: the tools it stands for, and the right-click flyout listing the group's modes
+/// and sibling tools. A single-tool slot has no flyout.
+private struct ToolSlot: Identifiable {
+    struct FlyoutItem: Identifiable {
+        let name: String
+        let key: String
+        let tool: NavigationTool
+        /// The mode the item switches the tool to; a no-op for items that are just a sibling tool.
+        var setup: (EditorSession) -> Void = { _ in }
+        let isActive: (EditorSession) -> Bool
+        var id: String { name }
+    }
+    let tools: [NavigationTool]
+    let flyout: [FlyoutItem]
+    var id: String { tools.map(\.rawValue).joined() }
+}
+
+extension ContentView {
+    /// The rail's slots, top to bottom. Related tools share a slot the way Photoshop groups them: a mode pair
+    /// (the Marquee's two shapes), or distinct tools with one job (the repair tools).
+    static private let toolSlots: [ToolSlot] = [
+        ToolSlot(tools: [.move], flyout: []),
+        ToolSlot(tools: [.marquee], flyout: [
+            ToolSlot.FlyoutItem(name: "矩形选框", key: "M", tool: .marquee, setup: { $0.marqueeKind = .rectangle }) { $0.tool == .marquee && $0.marqueeKind == .rectangle },
+            ToolSlot.FlyoutItem(name: "椭圆选框", key: "M", tool: .marquee, setup: { $0.marqueeKind = .ellipse }) { $0.tool == .marquee && $0.marqueeKind == .ellipse },
+        ]),
+        ToolSlot(tools: [.lasso], flyout: [
+            ToolSlot.FlyoutItem(name: "套索", key: "L", tool: .lasso, setup: { $0.lassoKind = .freehand }) { $0.tool == .lasso && $0.lassoKind == .freehand },
+            ToolSlot.FlyoutItem(name: "多边形套索", key: "L", tool: .lasso, setup: { $0.lassoKind = .polygonal }) { $0.tool == .lasso && $0.lassoKind == .polygonal },
+        ]),
+        ToolSlot(tools: [.wand], flyout: [
+            ToolSlot.FlyoutItem(name: "魔棒", key: "W", tool: .wand, setup: { $0.wandMode = .wand }) { $0.tool == .wand && $0.wandMode == .wand },
+            ToolSlot.FlyoutItem(name: "对象选择", key: "W", tool: .wand, setup: { $0.wandMode = .object }) { $0.tool == .wand && $0.wandMode == .object },
+        ]),
+        ToolSlot(tools: [.crop], flyout: []),
+        ToolSlot(tools: [.brush], flyout: [
+            ToolSlot.FlyoutItem(name: "画笔", key: "B", tool: .brush, setup: { $0.brushMode = .paint }) { $0.tool == .brush && $0.brushMode == .paint },
+            ToolSlot.FlyoutItem(name: "橡皮擦", key: "E", tool: .brush, setup: { $0.brushMode = .erase }) { $0.tool == .brush && $0.brushMode == .erase },
+        ]),
+        ToolSlot(tools: [.spotHealing, .remove, .cloneStamp], flyout: [
+            ToolSlot.FlyoutItem(name: "污点修复画笔", key: "J", tool: .spotHealing) { $0.tool == .spotHealing },
+            ToolSlot.FlyoutItem(name: "移除", key: "K", tool: .remove) { $0.tool == .remove },
+            ToolSlot.FlyoutItem(name: "仿制图章", key: "S", tool: .cloneStamp) { $0.tool == .cloneStamp },
+        ]),
+        ToolSlot(tools: [.blur], flyout: [
+            ToolSlot.FlyoutItem(name: "液化", key: "R", tool: .blur, setup: { $0.blurMode = .liquify }) { $0.tool == .blur && $0.blurMode == .liquify },
+            ToolSlot.FlyoutItem(name: "模糊", key: "R", tool: .blur, setup: { $0.blurMode = .blur }) { $0.tool == .blur && $0.blurMode == .blur },
+            ToolSlot.FlyoutItem(name: "涂抹", key: "R", tool: .blur, setup: { $0.blurMode = .smudge }) { $0.tool == .blur && $0.blurMode == .smudge },
+        ]),
+        ToolSlot(tools: [.gradient], flyout: []),
+        ToolSlot(tools: [.shape], flyout: [
+            ToolSlot.FlyoutItem(name: "矩形", key: "U", tool: .shape, setup: { $0.shapeKind = .rectangle }) { $0.tool == .shape && $0.shapeKind == .rectangle },
+            ToolSlot.FlyoutItem(name: "椭圆", key: "U", tool: .shape, setup: { $0.shapeKind = .ellipse }) { $0.tool == .shape && $0.shapeKind == .ellipse },
+            ToolSlot.FlyoutItem(name: "直线", key: "U", tool: .shape, setup: { $0.shapeKind = .line }) { $0.tool == .shape && $0.shapeKind == .line },
+        ]),
+        ToolSlot(tools: [.type], flyout: []),
+        ToolSlot(tools: [.eyedropper], flyout: []),
+        ToolSlot(tools: [.hand, .zoom], flyout: [
+            ToolSlot.FlyoutItem(name: "抓手", key: "H", tool: .hand) { $0.tool == .hand },
+            ToolSlot.FlyoutItem(name: "缩放", key: "Z", tool: .zoom) { $0.tool == .zoom },
+        ]),
+    ]
 }
 
 /// A panel's divider that resizes the panel to its right: drag left to widen, right to narrow, within `range`.
