@@ -22,6 +22,12 @@
 
 
 ![新建画布](docs/screenshots/01-新建画布.jpg) 
+
+## 致谢与许可
+
+- [Compositor](https://github.com/robbietilton/Compositor)（MIT）——上游项目，Robbie Tilton
+- [swift-inpaint](https://github.com/arraypress/swift-inpaint)（MIT）——移除工具的 Core ML 推理代码（vendored，文件头保留原作者声明）
+- [LaMa](https://github.com/advimman/lama)（Apache-2.0）——移除工具的图像修复模型；Release 中的 `LaMa.mlpackage.zip` 为其 Core ML 转换版（源自 [jerhoads/lama-coreml](https://huggingface.co/jerhoads/lama-coreml)）的再分发，Apache-2.0 许可证全文见 [LICENSE-APACHE](LICENSE-APACHE)
 >
 > 以下为上游原版 README。
 
