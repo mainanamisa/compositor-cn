@@ -309,6 +309,9 @@ struct ContentView: View {
                         else if tool == .cloneStamp { CloneStampToolIcon().frame(width: 18, height: 18) }
                         else if tool == .lasso, session.lassoKind == .polygonal { PolygonalLassoToolIcon().frame(width: 18, height: 18) }
                         else if tool == .wand, session.wandMode == .object { ObjectSelectionToolIcon().frame(width: 18, height: 18) }
+                        // "textformat" has a Chinese variant (格式) that Apple swaps in when the app localizes to
+                        // zh-Hans; the type tool keeps the Latin "Aa" instead.
+                        else if tool == .type { Text("Aa").font(.system(size: 16, weight: .medium)) }
                         // The Marquee's icon follows its shape: a dashed circle in Ellipse mode.
                         else { Image(systemName: tool == .marquee && session.marqueeKind == .ellipse ? "circle.dashed" : session.symbol(for: tool)).font(.system(size: 17)) }
                     }
