@@ -4,7 +4,7 @@ struct BrushControls: View {
     @Bindable var session: EditorSession
     var body: some View {
         HStack(spacing: 12) {
-            Text(session.tool == .spotHealing ? "污点修复" : session.tool == .cloneStamp ? "仿制图章" : session.tool == .blur ? "涂抹" : session.brushMode == .erase ? "橡皮擦" : "画笔").font(ToolHeaderStyle.titleFont)
+            Text(session.tool == .remove ? "移除" : session.tool == .spotHealing ? "污点修复" : session.tool == .cloneStamp ? "仿制图章" : session.tool == .blur ? "涂抹" : session.brushMode == .erase ? "橡皮擦" : "画笔").font(ToolHeaderStyle.titleFont)
             if session.tool == .brush {
                 Picker("模式", selection: $session.brushMode) {
                     ForEach(BrushToolMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -47,6 +47,8 @@ struct BrushControls: View {
                     session.brushSettings.diameter = value.isFinite ? min(2000, max(1, value)) : 40
                 }
                 .unitSuffix("px")
+            // Remove paints only a mask for the model: size is all it takes.
+            if session.tool != .remove {
             Text("硬度").scrubbable(sensitivity: 0.01, value: $session.brushSettings.hardness, range: 0...1)
             Slider(value: $session.brushSettings.hardness, in: 0...1).frame(width: 100)
             TextField("硬度", value: Binding<Double>(get: { Double(session.brushSettings.hardness * 100) },
@@ -67,6 +69,7 @@ struct BrushControls: View {
                             change: { session.brushSettings.opacity = CGFloat(min(100, max(1, $0)) / 100) })
                 .help("按 1–9 设置 10–90%，按 0 设置 100%")
                 .unitSuffix("%")
+            }
             // Blur softens by a radius of its own, apart from how strongly it lays the softening down.
             if session.tool == .blur, session.blurMode == .blur {
                 Text("半径").scrubbable(sensitivity: 0.1, value: $session.brushSettings.blurRadius, range: 0.5...50)
@@ -100,7 +103,7 @@ struct BrushControls: View {
                     Text("黑色 · 隐藏").tag(false)
                     Text("白色 · 显示").tag(true)
                 }.frame(width: 180)
-            } else if session.tool != .cloneStamp, session.tool != .blur {
+            } else if session.tool != .cloneStamp, session.tool != .blur, session.tool != .remove {
                 // Same foreground color and Color Picker as the tool-rail swatch.
                 HStack(spacing: 6) {
                     Text("颜色")

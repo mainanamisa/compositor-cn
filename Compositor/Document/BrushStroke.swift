@@ -24,6 +24,8 @@ nonisolated struct BrushSettings: Sendable {
     var erasing = false
     var healing = false
     var healingMode: SpotHealingMode = .contentAware
+    /// Remove: the stroke only marks what the inpainting model fills on mouse-up; it shows as a red wash.
+    var removing = false
 }
 
 nonisolated struct BrushPatch: @unchecked Sendable {
@@ -531,6 +533,10 @@ final class BrushStroke {
                     // While painting, the area to heal shows as a dark wash, as in Photoshop;
                     // `heal()` rebuilds it from its surroundings when the stroke ends.
                     BrushRaster.fill(Self.healingWash, coverage: mask, in: local, alpha: 0.45, context: tile.context)
+                } else if settings.removing, !isMask {
+                    // The Remove tool marks what goes away with a red wash, as Photoshop's does;
+                    // the model fills it when the stroke ends (see prepareRemoval/applyRemoval).
+                    BrushRaster.fill(Self.removeWash, coverage: mask, in: local, alpha: 0.45, context: tile.context)
                 } else if settings.erasing, !isMask {
                     // Erasing takes the coverage out of the layer's alpha, leaving the pixels under it transparent.
                     tile.context.saveGState()
@@ -572,6 +578,7 @@ final class BrushStroke {
 
     private static let eraseColor = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
     private static let healingWash = CGColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1)
+    private static let removeWash = CGColor(srgbRed: 0.9, green: 0.15, blue: 0.2, alpha: 1)
 
     private func dab(_ point: CGPoint, changed: inout Set<Int>) throws {
         let radius = settings.diameter / 2
@@ -902,6 +909,13 @@ final class BrushStroke {
             throw ProjectError.tooLarge
         }
         guard let healed = pixels.makeImage() else { throw ExportError.render }
+        writeIntoTiles(healed, at: region)
+    }
+
+    /// Rebuilds every touched tile from its original content with `image` (drawn at `region` of the stroke's
+    /// grid) over it, the selection still applied — how heal() and applyRemoval() replace the wash with
+    /// the fill.
+    private func writeIntoTiles(_ image: CGImage, at region: CGRect) {
         for key in coverage.keys {
             guard let tile = tiles[key] else { continue }
             let local = CGRect(origin: .zero, size: tile.rect.size)
@@ -916,10 +930,58 @@ final class BrushStroke {
                 context.concatenate(pixelToDocument)
                 context.translateBy(x: tile.rect.minX, y: tile.rect.minY)
             }
-            BrushRaster.draw(healed, in: region.offsetBy(dx: -tile.rect.minX, dy: -tile.rect.minY), mask: false, context: context)
+            BrushRaster.draw(image, in: region.offsetBy(dx: -tile.rect.minX, dy: -tile.rect.minY), mask: false, context: context)
             context.restoreGState()
             tiles[key]?.image = context.makeImage()
         }
+    }
+
+    // MARK: Remove tool
+
+    /// The stroke's painted coverage and the layer's pixels around it, cropped for the inpainting model
+    /// (white in the mask = to remove). Nil when nothing was painted, the layer has no pixels, or the brush
+    /// only covered transparent pixels — there is nothing to remove from those.
+    func prepareRemoval() throws -> (pixels: CGImage, mask: CGImage, region: CGRect)? {
+        guard settings.removing, !isMask, let source else { return nil }
+        var painted: CGRect?
+        for (key, context) in coverage {
+            guard let tile = tiles[key], let data = context.data else { continue }
+            var edges = [Int](repeating: 0, count: 4)
+            heal_coverage_bounds(data.assumingMemoryBound(to: UInt8.self), Int(tile.rect.width), Int(tile.rect.height),
+                                 context.bytesPerRow, &edges)
+            guard edges[2] > edges[0], edges[3] > edges[1] else { continue }
+            let rect = CGRect(x: edges[0], y: edges[1], width: edges[2] - edges[0], height: edges[3] - edges[1])
+                .offsetBy(dx: tile.rect.minX, dy: tile.rect.minY)
+            painted = painted.map { $0.union(rect) } ?? rect
+        }
+        guard let painted else { return nil }
+        // Past the layer's own pixels there's nothing to fill from or into.
+        let area = painted.intersection(sourceRect).integral
+        guard !area.isNull, !area.isEmpty else { return nil }
+        // A stroke over nothing but transparency needs no model run.
+        let check = try BrushRaster.context(width: Int(area.width), height: Int(area.height), mask: false)
+        BrushRaster.draw(source, in: sourceRect.offsetBy(dx: -area.minX, dy: -area.minY), mask: false, context: check)
+        guard let bytes = check.data else { throw ExportError.render }
+        var opaque = [Int](repeating: 0, count: 4)
+        brush_alpha_bounds(bytes.assumingMemoryBound(to: UInt8.self), Int(area.width), Int(area.height),
+                           check.bytesPerRow, &opaque)
+        guard opaque[2] > opaque[0], opaque[3] > opaque[1] else { return nil }
+        let region = RemoveFill.region(painted: painted, source: sourceRect)
+        let pixels = try BrushRaster.context(width: Int(region.width), height: Int(region.height), mask: false)
+        BrushRaster.draw(source, in: sourceRect.offsetBy(dx: -region.minX, dy: -region.minY), mask: false, context: pixels)
+        let painting = try BrushRaster.context(width: Int(region.width), height: Int(region.height), mask: true)
+        for (key, context) in coverage {
+            guard let tile = tiles[key], let image = context.makeImage() else { continue }
+            BrushRaster.draw(image, in: tile.rect.offsetBy(dx: -region.minX, dy: -region.minY), mask: true, context: painting)
+        }
+        guard let pixelImage = pixels.makeImage(), let maskImage = painting.makeImage() else { throw ExportError.render }
+        return (pixelImage, maskImage, region)
+    }
+
+    /// Writes the model's fill into the stroke's tiles, as heal() does, so the usual commit applies it
+    /// as one undo step.
+    func applyRemoval(_ filled: CGImage, region: CGRect) {
+        writeIntoTiles(filled, at: region)
     }
 
     /// Painting only adds alpha. Existing content bounds remain valid, so only the

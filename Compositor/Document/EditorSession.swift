@@ -88,15 +88,15 @@ struct CanvasDocument: Equatable {
 }
 
 enum NavigationTool: String, CaseIterable {
-    case move, marquee, lasso, wand, crop, brush, spotHealing, cloneStamp, blur, gradient, shape, type, eyedropper, hand, zoom
+    case move, marquee, lasso, wand, crop, brush, spotHealing, remove, cloneStamp, blur, gradient, shape, type, eyedropper, hand, zoom
     /// No tool (A): nothing in the tool rail is selected and canvas clicks do nothing.
     case idle
     /// Tools that paint with the brush tip, sharing its size, hardness, opacity, and keys.
-    var isBrushTool: Bool { self == .brush || self == .spotHealing || self == .cloneStamp || self == .blur }
+    var isBrushTool: Bool { self == .brush || self == .spotHealing || self == .remove || self == .cloneStamp || self == .blur }
     /// Tools that draw and edit selections, sharing modifiers, moving, and nudging.
     var isSelectionTool: Bool { self == .marquee || self == .lasso || self == .wand }
-    var symbol: String { self == .type ? "textformat" : self == .eyedropper ? "eyedropper" : self == .marquee ? "rectangle.dashed" : self == .lasso ? "lasso" : self == .wand ? "wand.and.stars" : self == .brush ? "paintbrush.pointed" : self == .spotHealing ? "bandage" : self == .cloneStamp ? "seal" : self == .blur ? "drop" : self == .gradient ? "square.bottomhalf.filled" : self == .shape ? "square.on.circle" : self == .crop ? "crop" : self == .move ? "arrow.up.left.and.arrow.down.right" : self == .hand ? "hand.draw" : "magnifyingglass" }
-    var label: String { self == .type ? "文字 (T)" : self == .eyedropper ? "吸管 (I)" : self == .marquee ? "选框 (M)" : self == .lasso ? "套索 (L)" : self == .wand ? "魔棒 (W) · Tab 切换魔棒与对象选择" : self == .brush ? "画笔 (B) · 橡皮擦 (E)" : self == .spotHealing ? "污点修复画笔 (J)" : self == .cloneStamp ? "仿制图章 (S) · Option-点按设置取样源" : self == .blur ? "涂抹 (R)" : self == .gradient ? "渐变 (G)" : self == .shape ? "形状 (U) · Shift-U 切换矩形/椭圆" : self == .crop ? "裁剪 (C)" : self == .move ? "移动 / 变换 (V)" : self == .hand ? "抓手 (H)" : "缩放 (Z)" }
+    var symbol: String { self == .type ? "textformat" : self == .eyedropper ? "eyedropper" : self == .marquee ? "rectangle.dashed" : self == .lasso ? "lasso" : self == .wand ? "wand.and.stars" : self == .brush ? "paintbrush.pointed" : self == .spotHealing ? "bandage" : self == .remove ? "wand.and.rays" : self == .cloneStamp ? "seal" : self == .blur ? "drop" : self == .gradient ? "square.bottomhalf.filled" : self == .shape ? "square.on.circle" : self == .crop ? "crop" : self == .move ? "arrow.up.left.and.arrow.down.right" : self == .hand ? "hand.draw" : "magnifyingglass" }
+    var label: String { self == .type ? "文字 (T)" : self == .eyedropper ? "吸管 (I)" : self == .marquee ? "选框 (M)" : self == .lasso ? "套索 (L)" : self == .wand ? "魔棒 (W) · Tab 切换魔棒与对象选择" : self == .brush ? "画笔 (B) · 橡皮擦 (E)" : self == .spotHealing ? "污点修复画笔 (J)" : self == .remove ? "移除 (K)" : self == .cloneStamp ? "仿制图章 (S) · Option-点按设置取样源" : self == .blur ? "涂抹 (R)" : self == .gradient ? "渐变 (G)" : self == .shape ? "形状 (U) · Shift-U 切换矩形/椭圆" : self == .crop ? "裁剪 (C)" : self == .move ? "移动 / 变换 (V)" : self == .hand ? "抓手 (H)" : "缩放 (Z)" }
 }
 
 @Observable
@@ -130,6 +130,8 @@ final class EditorSession {
     /// True once `isProjectBusy` has lasted longer than `busyIndicatorDelay`.
     private(set) var showsBusy = false
     static let busyIndicatorDelay: Duration = .milliseconds(250)
+    /// What the busy indicator says while a long operation runs ("正在移除…"); nil for the generic label.
+    var busyLabel: String?
     @ObservationIgnored private var busyIndicatorTask: Task<Void, Never>?
     private func updateBusyIndicator() {
         if isProjectBusy {

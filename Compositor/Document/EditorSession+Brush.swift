@@ -50,8 +50,14 @@ extension EditorSession {
     func beginBrush(at point: CGPoint) {
         // Spot Healing and Clone Stamp rework image pixels; they have nothing to do on a mask.
         if tool == .blur, blurMode != .blur { beginWarp(at: point); return }
+        // The Remove tool works on pixels, not on a mask.
+        if tool == .remove, isMaskSelected { brushError = "移除工具作用于图层像素。请点按图层缩略图，改为编辑图层内容"; return }
         guard tool == .brush || tool == .blur || (tool.isBrushTool && !isMaskSelected) else { return }
         guard canPaint, let layer = activeLayer, let document else { brushError = paintRefusal; return }
+        if tool == .remove, layer.asset == nil {
+            brushError = "“\(layer.name)”是空图层，没有可移除的内容"
+            return
+        }
         var sourceOffset: CGSize?
         if tool == .cloneStamp {
             guard let offset = cloneStrokeOffset(at: point) else {
@@ -66,8 +72,10 @@ extension EditorSession {
             settings.healing = tool == .spotHealing
             settings.erasing = tool == .brush && brushMode == .erase && !isMaskSelected
             settings.healingMode = spotHealingMode
+            settings.removing = tool == .remove
             if isMaskSelected { settings.red = maskPaintWhite ? 1 : 0; settings.green = settings.red; settings.blue = settings.red }
             let stroke = try makeRasterEdit(for: layer, settings: settings, growsMask: tool == .brush)
+            if tool == .remove { stroke.editName = "移除" }
             if let offset = sourceOffset {
                 guard let sample = cloneSample(document, for: stroke, offset: offset) else { return }
                 cloneOffset = offset
@@ -133,6 +141,11 @@ extension EditorSession {
         }
         guard let stroke = brushStroke else { return true }
         guard !isProjectBusy else { return false }
+        // The Remove tool's fill needs the model, possibly a download first: finish it asynchronously.
+        if stroke.settings.removing {
+            Task { await finishRemoval(stroke) }
+            return true
+        }
         defer { cancelBrush() }
         do {
             // Smoothing leaves the brush short of the pointer; the stroke ends where the hand did.
@@ -148,6 +161,23 @@ extension EditorSession {
     }
 
     func finishBrush() async { finishBrushImmediately() }
+
+    /// The Remove tool's finish: makes sure the model is on disk (downloading it on first use),
+    /// inpaints the painted region off the main thread, and commits it as one undo step.
+    private func finishRemoval(_ stroke: BrushStroke) async {
+        isProjectBusy = true
+        defer { isProjectBusy = false; cancelBrush() }
+        do {
+            try stroke.flush()
+            guard let removal = try stroke.prepareRemoval() else { return }
+            busyLabel = "正在移除…"
+            defer { busyLabel = nil }
+            guard await RemoveModelStore.shared.ensureAvailable() else { return }
+            let filled = try await Task.detached { try RemoveFill.inpainted(image: removal.pixels, mask: removal.mask) }.value
+            stroke.applyRemoval(filled, region: removal.region)
+            if !stroke.patches.isEmpty { try commitPaintSnapshot(stroke) }
+        } catch { brushError = error.localizedDescription }
+    }
 
     /// Install immutable tiles immediately, including the undo entry. The next
     /// stroke and other tools can start without awaiting full-image assembly.
@@ -226,7 +256,7 @@ extension EditorSession {
     }
     /// Tools where number keys set opacity: the brush or gradient opacity, or with
     /// Move/Transform the opacity of the selected layers.
-    var usesOpacityKeys: Bool { tool.isBrushTool || tool == .gradient || tool == .move }
+    var usesOpacityKeys: Bool { (tool.isBrushTool && tool != .remove) || tool == .gradient || tool == .move }
 
     /// Photoshop-style opacity keys: 1 = 10% … 9 = 90%, 0 = 100%.
     /// Two digits typed quickly set an exact value (4 then 5 = 45%, 0 then 5 = 5%).

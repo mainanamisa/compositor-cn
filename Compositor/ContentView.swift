@@ -279,6 +279,10 @@ struct ContentView: View {
             set: { if !$0 { session.cropError = nil } })) {
                 Button("好") { session.cropError = nil }
             } message: { Text(session.cropError ?? "") }
+        .sheet(isPresented: Binding(get: { RemoveModelStore.shared.stage != nil },
+            set: { if !$0 { RemoveModelStore.shared.cancel() } })) {
+                RemoveModelSheet(store: RemoveModelStore.shared)
+            }
     }
     private func requestNewCanvas() {
         if let applicationDelegate { Task { await applicationDelegate.projects.newCanvas() } }
@@ -334,12 +338,12 @@ struct ContentView: View {
             Spacer()
             if session.showsBusy {
                 ProgressView().controlSize(.mini)
-                Text("正在处理…")
+                Text(session.busyLabel ?? "正在处理…")
             } else if session.isImporting {
                 ProgressView().controlSize(.mini)
                 Text("正在导入图像…")
             } else {
-                Text(session.tool == .marquee ? (session.marqueeKind == .ellipse ? "拖出椭圆选区 · Shift 添加 · Option 减去 · 拖动中再按 Shift 为正圆 · 在选区内拖动可移动 · Delete 清除 · ⌘D 取消选择" : "拖出矩形选区 · Shift 添加 · Option 减去 · 拖动中再按 Shift 为正方形 · 在选区内拖动可移动 · ⌘拖动移动像素 · Delete 清除 · ⌘D 取消选择") : session.tool == .wand ? (session.wandMode == .object ? "单击对象以选中其轮廓 · Tab 切换魔棒 · Shift 添加 · Option 减去 · 在选区内拖动可移动 · ⌘拖动移动像素 · Delete 清除 · ⌘D 取消选择" : "单击以选中相近颜色 · Tab 切换对象选择 · Shift 添加 · Option 减去 · 在选区内拖动可移动 · ⌘拖动移动像素 · Delete 清除 · ⌘D 取消选择") : session.tool == .lasso ? (session.lassoKind == .freehand ? "拖动以创建选区 · 在选区内拖动可移动 · Shift 添加 · Option 减去 · Delete 清除 · ⌥⌫/⌘⌫ 填充 · ⌘D 取消选择" : "单击放置顶点 · 单击起点、双击或按 Enter 闭合 · Delete 删除顶点 · Escape 取消") : session.tool == .brush ? (session.brushMode == .erase ? "拖动以擦除" : "拖动以绘画") + " · [ ] 调整大小 · Shift-[ ] 调整硬度 · 1–0 不透明度 · Escape 取消 · 空格键平移" : session.tool == .blur ? (session.blurMode == .blur ? "拖动以柔化" : session.blurMode == .smudge ? "拖动以涂抹" : "拖动以推移像素") + " · [ ] 调整大小 · Shift-[ ] 调整硬度 · 1–0 强度 · 空格键平移" : session.tool == .cloneStamp ? "Option-单击设置取样源 · 拖动以仿制 · [ ] 调整大小 · Shift-[ ] 调整硬度 · 1–0 不透明度 · 空格键平移" : session.tool == .spotHealing ? "在瑕疵上拖动以修复 · [ ] 调整大小 · Shift-[ ] 调整硬度 · Escape 取消 · 空格键平移" : session.tool == .type ? "拖出文本框 · 单击文字进行编辑 · 拖动文本框手柄调整大小 · ⌘Return 完成 · Escape 取消" : session.tool == .shape ? "拖动以在新图层上绘制形状 · Shift \(session.shapeKind == .line ? "45°" : session.shapeKind == .rectangle ? "正方形" : "正圆") · Option 从中心绘制 · Shift-U 或 Tab 切换下一个形状 · Escape 取消 · 空格键平移" : session.tool == .gradient ? "拖动以绘制 · 拖动端点调整 · Shift 45° · 1–0 不透明度 · Enter 应用 · Escape 取消" : session.tool == .crop ? "拖动以裁剪 · Enter 应用 · Escape 取消 · 空格键平移" : session.tool == .move ? "拖动以移动 · 拖动手柄调整大小 · 拖动圆环旋转 · 1–0 图层不透明度 · 空格键平移" : session.tool == .hand ? "拖动以平移 · 双指捏合缩放" : session.tool == .idle ? "未选择工具 · 按工具对应的按键选择工具 · 空格键平移" : "单击放大 · Option-单击缩小 · 左右拖动平滑缩放 · 空格键平移")
+                Text(session.tool == .marquee ? (session.marqueeKind == .ellipse ? "拖出椭圆选区 · Shift 添加 · Option 减去 · 拖动中再按 Shift 为正圆 · 在选区内拖动可移动 · Delete 清除 · ⌘D 取消选择" : "拖出矩形选区 · Shift 添加 · Option 减去 · 拖动中再按 Shift 为正方形 · 在选区内拖动可移动 · ⌘拖动移动像素 · Delete 清除 · ⌘D 取消选择") : session.tool == .wand ? (session.wandMode == .object ? "单击对象以选中其轮廓 · Tab 切换魔棒 · Shift 添加 · Option 减去 · 在选区内拖动可移动 · ⌘拖动移动像素 · Delete 清除 · ⌘D 取消选择" : "单击以选中相近颜色 · Tab 切换对象选择 · Shift 添加 · Option 减去 · 在选区内拖动可移动 · ⌘拖动移动像素 · Delete 清除 · ⌘D 取消选择") : session.tool == .lasso ? (session.lassoKind == .freehand ? "拖动以创建选区 · 在选区内拖动可移动 · Shift 添加 · Option 减去 · Delete 清除 · ⌥⌫/⌘⌫ 填充 · ⌘D 取消选择" : "单击放置顶点 · 单击起点、双击或按 Enter 闭合 · Delete 删除顶点 · Escape 取消") : session.tool == .brush ? (session.brushMode == .erase ? "拖动以擦除" : "拖动以绘画") + " · [ ] 调整大小 · Shift-[ ] 调整硬度 · 1–0 不透明度 · Escape 取消 · 空格键平移" : session.tool == .blur ? (session.blurMode == .blur ? "拖动以柔化" : session.blurMode == .smudge ? "拖动以涂抹" : "拖动以推移像素") + " · [ ] 调整大小 · Shift-[ ] 调整硬度 · 1–0 强度 · 空格键平移" : session.tool == .cloneStamp ? "Option-单击设置取样源 · 拖动以仿制 · [ ] 调整大小 · Shift-[ ] 调整硬度 · 1–0 不透明度 · 空格键平移" : session.tool == .spotHealing ? "在瑕疵上拖动以修复 · [ ] 调整大小 · Shift-[ ] 调整硬度 · Escape 取消 · 空格键平移" : session.tool == .remove ? "在要移除的内容上涂抹，松开后自动补全 · [ ] 调整大小 · Escape 取消 · 空格键平移" : session.tool == .type ? "拖出文本框 · 单击文字进行编辑 · 拖动文本框手柄调整大小 · ⌘Return 完成 · Escape 取消" : session.tool == .shape ? "拖动以在新图层上绘制形状 · Shift \(session.shapeKind == .line ? "45°" : session.shapeKind == .rectangle ? "正方形" : "正圆") · Option 从中心绘制 · Shift-U 或 Tab 切换下一个形状 · Escape 取消 · 空格键平移" : session.tool == .gradient ? "拖动以绘制 · 拖动端点调整 · Shift 45° · 1–0 不透明度 · Enter 应用 · Escape 取消" : session.tool == .crop ? "拖动以裁剪 · Enter 应用 · Escape 取消 · 空格键平移" : session.tool == .move ? "拖动以移动 · 拖动手柄调整大小 · 拖动圆环旋转 · 1–0 图层不透明度 · 空格键平移" : session.tool == .hand ? "拖动以平移 · 双指捏合缩放" : session.tool == .idle ? "未选择工具 · 按工具对应的按键选择工具 · 空格键平移" : "单击放大 · Option-单击缩小 · 左右拖动平滑缩放 · 空格键平移")
             }
         }
         .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)

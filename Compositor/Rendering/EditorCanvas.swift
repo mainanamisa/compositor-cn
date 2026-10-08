@@ -2216,6 +2216,7 @@ final class CanvasView: NSView {
             case "b": session.selectTool(.brush); session.brushMode = .paint
             case "e": session.selectTool(.brush); session.brushMode = .erase
             case "j": session.selectTool(.spotHealing)
+            case "k": session.selectTool(.remove)
             case "s": session.selectTool(.cloneStamp)
             case "t": session.selectTool(.type)
             case "g": session.selectTool(.gradient)
