@@ -65,6 +65,7 @@ struct NewCanvasSheet: View {
     let session: EditorSession
     var onCreate: ((Int, Int, Double, CGColor?) -> Void)? = nil
     var onOpen: (() -> Void)? = nil
+    var onOpenRecent: ((URL) -> Void)? = nil
     @State private var width = "1920"
     @State private var height = "1080"
     /// Always starting from the common case: remembered print settings turned the default 1920 × 1080 into inches,
@@ -169,6 +170,17 @@ struct NewCanvasSheet: View {
                 .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
                 .disabled(!valid).accessibilityIdentifier("createCanvas")
             }
+            if !RecentProjects.shared.urls.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("最近项目").font(.callout.weight(.medium))
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 112, maximum: 140), spacing: 12)], spacing: 12) {
+                        ForEach(RecentProjects.shared.urls.prefix(6), id: \.self) { url in
+                            RecentProjectCell(url: url) { onOpenRecent?(url) }
+                        }
+                    }
+                }
+            }
         }
         .padding(28).frame(maxWidth: 500)
         .disabled(session.isImporting || session.showsBusy)
@@ -217,6 +229,53 @@ struct NewCanvasSheet: View {
             }
             .padding(12).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
         }
+    }
+}
+
+/// A recent project on the welcome sheet: the flattened preview the package carries in its QuickLook folder,
+/// falling back to a placeholder when it was saved before previews existed. Opens on click.
+private struct RecentProjectCell: View {
+    let url: URL
+    let open: () -> Void
+    @State private var thumbnail: NSImage?
+    @State private var hovering = false
+    var body: some View {
+        Button(action: open) {
+            VStack(spacing: 6) {
+                Group {
+                    if let thumbnail {
+                        Image(nsImage: thumbnail).resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "photo").font(.title2).foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.quaternary.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(.white.opacity(hovering ? 0.25 : 0.1))
+                }
+                .frame(height: 84)
+                Text(url.deletingPathExtension().lastPathComponent)
+                    .font(.caption).lineLimit(1).truncationMode(.middle)
+                    .frame(maxWidth: .infinity)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(url.path)
+        .accessibilityIdentifier("recentProject")
+        .contextMenu {
+            Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        }
+        .onAppear { thumbnail = Self.loadThumbnail(url) }
+    }
+    static func loadThumbnail(_ url: URL) -> NSImage? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        return NSImage(contentsOf: url.appendingPathComponent("QuickLook/Preview.jpg"))
     }
 }
 
