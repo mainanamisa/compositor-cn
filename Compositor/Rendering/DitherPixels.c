@@ -372,3 +372,31 @@ void dither_glow(uint8_t *rgba, const uint8_t *glow, size_t width, size_t height
         }
     });
 }
+
+// A fixed pseudo-random value in [0, 1) for each pixel and draw.
+static inline float hash_noise(size_t x, size_t y, uint32_t draw) {
+    uint32_t h = (uint32_t)x * 0x9E3779B1u ^ (uint32_t)y * 0x85EBCA77u ^ draw * 0xC2B2AE3Du;
+    h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12; h *= 0x297A2D39u; h ^= h >> 15;
+    return (float)(h >> 8) / (float)(1u << 24);
+}
+
+void dither_quantize16(const uint16_t *wide, uint8_t *rgba, size_t width, size_t height, size_t stride) {
+    in_bands(height, ^(size_t first, size_t last) {
+        for (size_t y = first; y < last; ++y) {
+            uint8_t *out = rgba + y * stride;
+            const uint16_t *in = wide + y * width * 4;
+            for (size_t x = 0; x < width; ++x) {
+                const uint16_t *p = in + x * 4;
+                long alpha = lroundf((float)p[3] * (255.0f / 65535.0f));
+                for (uint32_t c = 0; c < 3; ++c) {
+                    // Two uniform draws added: noise that's strongest at zero and gone past one step.
+                    float value = (float)p[c] * (255.0f / 65535.0f) + hash_noise(x, y, c) + hash_noise(x, y, c + 3) - 1.0f;
+                    long rounded = lroundf(value);
+                    // Premultiplied: the noise mustn't lift a color past its own alpha.
+                    out[x * 4 + c] = (uint8_t)(rounded < 0 ? 0 : rounded > alpha ? alpha : rounded);
+                }
+                out[x * 4 + 3] = (uint8_t)alpha;
+            }
+        }
+    });
+}

@@ -76,7 +76,7 @@ struct ShortcutDefinition: Identifiable {
             entry("新建画布", "n", 1, menu: true), entry("打开项目", "o", 1, menu: true),
             entry("存储", "s", 1, menu: true), entry("存储为", "s", 9, menu: true),
             entry("导出 PNG", "e", 9, menu: true), entry("导出 JPEG", "s", 11, menu: true),
-            entry("关闭项目", "w", 1, menu: true), entry("适合画布", "0", 1, menu: true),
+            entry("关闭项目", "w", 1, menu: true), entry("适合画布", "0", 1, menu: true), entry("命令面板", "f", 1, menu: true),
             entry("实际像素", "1", 1, menu: true), entry("放大", "=", 1, menu: true),
             entry("缩小", "-", 1, menu: true), entry("显示变换控件", "h", 1, menu: true),
             entry("隐藏 Compositor", "h", 3, menu: true), entry("剪切", "x", 1, menu: true),
@@ -97,7 +97,7 @@ struct ShortcutDefinition: Identifiable {
             entry("显示标尺", "r", 1, menu: true), entry("对齐", ";", 9, menu: true),
             entry("锁定参考线", ";", 3, menu: true)
         ]
-        for (title, key) in [("选择工具", "a"), ("移动 / 变换工具", "v"), ("抓手工具", "h"),
+        for (title, key) in [("仅画布：全屏黑底，隐藏面板", "f"), ("选择工具", "a"), ("移动 / 变换工具", "v"), ("抓手工具", "h"),
             ("缩放工具", "z"), ("画笔工具", "b"), ("橡皮擦", "e"), ("污点修复", "j"),
             ("仿制图章", "s"), ("文字工具", "t"), ("渐变工具", "g"), ("形状工具", "u"),
             ("吸管工具", "i"), ("选框 / 循环形状", "m"), ("魔棒", "w"),

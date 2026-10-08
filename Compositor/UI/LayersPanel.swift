@@ -44,7 +44,7 @@ struct LayersPanel: View {
                     }
                 } label: { Image(systemName: "sparkles").footerHitArea() }
                     .menuStyle(.borderlessButton).fixedSize()
-                    .help("图层效果：描边和投影").accessibilityLabel("图层效果")
+                    .help("添加图层效果").accessibilityLabel("图层效果")
                     .accessibilityIdentifier("layerEffects").disabled(!session.canEditEffects)
                 Menu {
                     ForEach(AdjustmentKind.allCases, id: \.self) { kind in

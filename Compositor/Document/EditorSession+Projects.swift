@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 extension EditorSession {
     func projectSnapshot() -> ProjectSnapshot? {
@@ -71,9 +72,9 @@ extension EditorSession {
         history.reset()
     }
 
-    func createNewProject(width: Int, height: Int) {
+    func createNewProject(width: Int, height: Int, resolution: Double = 72, background: CGColor? = nil) {
         guard !isProjectBusy, !isImporting, (1...DocumentLimits.maxSide).contains(width), (1...DocumentLimits.maxSide).contains(height) else { return }
         clearProject()
-        createDocument(width: width, height: height, emptyLayer: true)
+        createDocument(width: width, height: height, emptyLayer: true, resolution: resolution, background: background)
     }
 }

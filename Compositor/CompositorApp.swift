@@ -92,6 +92,16 @@ struct CompositorApp: App {
                 // Grouped: a commands builder takes at most ten items.
                 Group {
                     CommandGroup(after: .toolbar) {
+                        Button("命令面板…") {
+                            CommandPaletteController.shared.toggle(session: session, over: applicationDelegate.projects.window)
+                        }
+                        .configuredKeyboardShortcut("f", modifiers: [.command])
+                        // F, handled by the app rather than as the menu's key: a plain letter here would fire while
+                        // typing too.
+                        Toggle("仅画布模式 (F)", isOn: Binding(get: { session.canvasOnly },
+                                                                set: { _ in applicationDelegate.toggleCanvasOnly() }))
+                            .disabled(session.document == nil)
+                        Divider()
                         // With a dialog's preview open (Export JPEG), these zoom that preview rather than the canvas.
                         Button("适应窗口") {
                             if let preview = session.previewZoom { preview(.fit) } else { session.fit() }
@@ -111,8 +121,6 @@ struct CompositorApp: App {
                             .configuredKeyboardShortcut("-").disabled(session.document == nil)
                         Toggle("像素网格（800% 及以上）", isOn: Binding(get: { session.showsPixelGrid },
                                                                               set: { session.showsPixelGrid = $0 }))
-                        Toggle("对齐", isOn: Binding(get: { session.snappingEnabled },
-                                                     set: { session.snappingEnabled = $0 }))
                         Toggle("显示变换控件", isOn: Binding(get: { session.showsTransformControls },
                                                                           set: { session.showsTransformControls = $0 }))
                             .configuredKeyboardShortcut("h").disabled(session.tool != .move || session.document == nil)
@@ -270,6 +278,10 @@ struct CompositorApp: App {
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
                     Group {
                         Divider()
+                        Button("顺时针旋转画布 90°") { session.rotateCanvas(clockwise: true) }
+                            .disabled(!session.canEditLayers)
+                        Button("逆时针旋转画布 90°") { session.rotateCanvas(clockwise: false) }
+                            .disabled(!session.canEditLayers)
                         Button("水平翻转画布") { session.flipCanvas(horizontally: true) }
                             .disabled(!session.canEditLayers)
                         Button("垂直翻转画布") { session.flipCanvas(horizontally: false) }

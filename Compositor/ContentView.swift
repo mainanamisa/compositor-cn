@@ -78,12 +78,14 @@ struct ContentView: View {
 
     @ViewBuilder private var editorStack: some View {
         VStack(spacing: 0) {
-            toolHeaders
+            if !session.canvasOnly { toolHeaders }
             HStack(spacing: 0) {
-                toolRail
-                Divider()
+                if !session.canvasOnly {
+                    toolRail
+                    Divider()
+                }
                 VStack(spacing: 0) {
-                    if session.showsRulers, session.document != nil {
+                    if session.showsRulers, session.document != nil, !session.canvasOnly {
                         HStack(spacing: 0) {
                             CanvasRulerCorner()
                             CanvasRulerView(session: session, axis: .horizontal)
@@ -91,7 +93,7 @@ struct ContentView: View {
                         }
                     }
                     HStack(spacing: 0) {
-                        if session.showsRulers, session.document != nil {
+                        if session.showsRulers, session.document != nil, !session.canvasOnly {
                             CanvasRulerView(session: session, axis: .vertical)
                                 .frame(width: CanvasRuler.thickness)
                         }
@@ -108,13 +110,17 @@ struct ContentView: View {
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("editor")) } action: { canvasFrame = $0 }
                     }
                 }
-                PanelResizeEdge(width: $layersPanelWidth, range: LayersPanel.widths)
-                LayersPanel(session: session, width: layersPanelWidth)
+                if !session.canvasOnly {
+                    PanelResizeEdge(width: $layersPanelWidth, range: LayersPanel.widths)
+                    LayersPanel(session: session, width: layersPanelWidth)
+                }
             }
-            Divider()
-            // Keeps its own height however short the window gets; the tools scroll instead.
-            statusBar.fixedSize(horizontal: false, vertical: true)
-                .modifier(WidthReader(width: $windowWidth))
+            if !session.canvasOnly {
+                Divider()
+                // Keeps its own height however short the window gets; the tools scroll instead.
+                statusBar.fixedSize(horizontal: false, vertical: true)
+                    .modifier(WidthReader(width: $windowWidth))
+            }
         }
     }
 
@@ -156,6 +162,10 @@ struct ContentView: View {
         }
         .onAppear { applicationDelegate?.showEditor = { openWindow(id: "editor") } }
         .preferredColorScheme(.dark)
+        // Canvas Only (F): the canvas runs up under where the title bar was, so no gray strip is left across the top.
+        // The toolbar itself is hidden and shown by the window (see `toggleCanvasOnly`), which lays its buttons out
+        // again properly; hidden here instead, it came back with the tabs over the window buttons.
+        .ignoresSafeArea(.container, edges: session.canvasOnly ? .top : [])
         .navigationTitle(session.projectURL?.deletingPathExtension().lastPathComponent ?? "未命名")
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -320,7 +330,7 @@ struct ContentView: View {
     }
     private var welcome: some View {
         NewCanvasSheet(session: session,
-            onCreate: { session.createNewProject(width: $0, height: $1) },
+            onCreate: { session.createNewProject(width: $0, height: $1, resolution: $2, background: $3) },
             onOpen: { Task { await applicationDelegate?.projects.open() } })
     }
     private var statusBar: some View {
