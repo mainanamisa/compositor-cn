@@ -115,36 +115,61 @@ final class RemoveModelStore {
         throw lastError
     }
 
-    /// Streams the zip to disk, reporting progress into the sheet every few hundred KB.
+    /// Streams the zip to disk, reporting progress into the sheet every few hundred KB. A stall
+    /// resumes where it left off (GitHub answers Range requests) — on a slow or flaky connection
+    /// a fresh 196 MB start rarely survives.
     private func fetch(_ url: URL, to destination: URL) async throws {
-        var request = URLRequest(url: url)
-        // GitHub's asset API serves the bytes only when asked for them this way.
-        if url.host == "api.github.com" { request.setValue("application/octet-stream", forHTTPHeaderField: "Accept") }
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw Failure.download }
-        let total = response.expectedContentLength
         FileManager.default.createFile(atPath: destination.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: destination)
-        var received = 0
-        var chunk = Data()
-        chunk.reserveCapacity(1 << 20)
-        do {
-            for try await byte in bytes {
-                chunk.append(byte)
-                if chunk.count >= 1 << 20 {
-                    try handle.write(contentsOf: chunk)
-                    received += chunk.count
-                    chunk.removeAll(keepingCapacity: true)
-                    if total > 0 { stage = .downloading(Double(received) / Double(total)) }
+        var received = (try? FileHandle(forReadingFrom: destination).seekToEnd()) ?? 0
+        var total: Int64 = -1
+        var attempts = 0
+        while true {
+            do {
+                var request = URLRequest(url: url)
+                // GitHub's asset API serves the bytes only when asked for them this way.
+                if url.host == "api.github.com" { request.setValue("application/octet-stream", forHTTPHeaderField: "Accept") }
+                if received > 0 { request.setValue("bytes=\(received)-", forHTTPHeaderField: "Range") }
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 || http.statusCode == 206 else {
+                    throw Failure.download
                 }
+                if received > 0, http.statusCode == 200 {
+                    // The Range request was ignored: anything on disk is the old beginning, start over.
+                    received = 0
+                    try? FileManager.default.removeItem(at: destination)
+                    FileManager.default.createFile(atPath: destination.path, contents: nil)
+                }
+                if total < 0 { total = http.expectedContentLength + Int64(received) }
+                let handle = try FileHandle(forWritingTo: destination)
+                do {
+                    try handle.seekToEnd()
+                    var chunk = Data()
+                    chunk.reserveCapacity(1 << 20)
+                    for try await byte in bytes {
+                        chunk.append(byte)
+                        if chunk.count >= 1 << 20 {
+                            try handle.write(contentsOf: chunk)
+                            received += UInt64(chunk.count)
+                            chunk.removeAll(keepingCapacity: true)
+                            if total > 0 { stage = .downloading(Double(received) / Double(total)) }
+                        }
+                    }
+                    if !chunk.isEmpty { try handle.write(contentsOf: chunk); received += UInt64(chunk.count) }
+                    try handle.close()
+                } catch {
+                    try? handle.close()
+                    throw error
+                }
+                if total > 0 { stage = .downloading(1) }
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                attempts += 1
+                guard attempts < 8 else { throw Failure.download }
+                try await Task.sleep(for: .seconds(2))
             }
-            if !chunk.isEmpty { try handle.write(contentsOf: chunk) }
-            try handle.close()
-        } catch {
-            try? handle.close()
-            throw error
         }
-        if total > 0 { stage = .downloading(1) }
     }
 
     /// The checksum runs before unpacking, and the unpacked package must look like a model.
