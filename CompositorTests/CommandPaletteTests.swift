@@ -56,16 +56,18 @@ struct CommandPaletteTests {
     @Test func realMenuBarRunsItsCommands() async throws {
         let bar = try #require(NSApp.mainMenu)
         func entries() -> [CommandPaletteEntry] { CommandPaletteMenu.entries(in: bar, skipping: CommandPaletteController.skipped) }
+        // The View menu's title comes from the system: 显示 on a Chinese Mac, View on an English one (CI).
+        let view = try #require(bar.items.first { ["显示", "View"].contains($0.title) }).title
         func gridState() -> NSControl.StateValue? {
-            bar.items.first { $0.title == "显示" }?.submenu?.items.first { $0.title == "像素网格（800% 及以上）" }?.state
+            bar.items.first { $0.title == view }?.submenu?.items.first { $0.title == "像素网格（800% 及以上）" }?.state
         }
         let listed = entries()
         let titles = Set(listed.map(\.title))
-        #expect(titles.contains("滤镜 › 高斯模糊…") && !titles.contains("显示 › 命令面板…"))
+        #expect(titles.contains("滤镜 › 高斯模糊…") && !titles.contains("\(view) › 命令面板…"))
         // The test host has no document open, so Zoom In is disabled: listed, greyed.
-        let zoom = try #require(listed.first { $0.title == "显示 › 放大" })
+        let zoom = try #require(listed.first { $0.title == "\(view) › 放大" })
         #expect(!zoom.isEnabled)
-        let grid = try #require(listed.first { $0.title == "显示 › 像素网格（800% 及以上）" })
+        let grid = try #require(listed.first { $0.title == "\(view) › 像素网格（800% 及以上）" })
         let before = try #require(gridState())
         grid.perform()
         try await Task.sleep(for: .milliseconds(300))
