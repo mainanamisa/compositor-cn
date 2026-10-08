@@ -340,6 +340,10 @@ struct CompositorApp: App {
                         .disabled(!session.canEditLayers || session.activeLayer == nil)
                 }
             }
+
+        Settings {
+            PreferencesView()
+        }
     }
 }
 

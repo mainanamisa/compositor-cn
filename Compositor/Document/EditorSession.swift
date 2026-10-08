@@ -636,6 +636,7 @@ final class EditorSession {
 
     /// Nestable transaction boundary; future tools can group a complete gesture.
     func beginEdit(_ name: String) {
+        history.retainedByteLimit = DocumentHistory.preferredRetainedByteLimit
         history.begin(name, document: document, selection: activeLayerID)
     }
 

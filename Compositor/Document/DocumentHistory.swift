@@ -22,10 +22,17 @@ final class DocumentHistory {
     private var pending: Snapshot?
     private var pendingName = "编辑"
     private var depth = 0
-    let entryLimit: Int
-    let retainedByteLimit: Int
+    var entryLimit: Int
+    var retainedByteLimit: Int
 
-    init(entryLimit: Int = 100, retainedByteLimit: Int = 1024 * 1024 * 1024) {
+    /// The Settings preference for retainedByteLimit, in bytes (default 1 GB). beginEdit refreshes
+    /// the live history from it, so a change applies without reopening the document.
+    static var preferredRetainedByteLimit: Int {
+        let mb = UserDefaults.standard.integer(forKey: "historyRetainedMB")
+        return (mb > 0 ? mb : 1024) * 1024 * 1024
+    }
+
+    init(entryLimit: Int = 100, retainedByteLimit: Int = preferredRetainedByteLimit) {
         self.entryLimit = max(0, entryLimit)
         self.retainedByteLimit = max(0, retainedByteLimit)
         savedRevision = revision
