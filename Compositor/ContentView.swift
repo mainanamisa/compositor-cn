@@ -317,42 +317,13 @@ struct ContentView: View {
         }
         .frame(width: 56)
     }
-    /// One rail slot: a button for the tool in use in its group, with a small corner triangle when the group
-    /// holds more. Clicking activates it; right-clicking lists the group's modes and sibling tools, each with
-    /// its key — the modes that used to hide behind Tab or Shift-key presses become visible choices.
-    @ViewBuilder
+    /// One rail slot; the button itself lives in ToolSlotButton so each slot owns the state of its
+    /// long-press flyout. Clicking activates the group's tool in use; right-clicking or pressing and
+    /// holding lists the group's modes and sibling tools, each with its key — the modes that used to
+    /// hide behind Tab or Shift-key presses become visible choices.
     private func toolButton(_ slot: ToolSlot) -> some View {
-        let tool = representativeTool(for: slot)
-        let selected = slot.tools.contains(session.tool)
-        Button { selectSlot(slot) } label: {
-            toolIcon(tool)
-                .frame(width: 36, height: 36)
-                .background(selected ? Color.white.opacity(0.12) : .clear,
-                            in: RoundedRectangle(cornerRadius: 7))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(selected ? Color.white.opacity(0.14) : .clear)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    if !slot.flyout.isEmpty {
-                        Image(systemName: "arrowtriangle.down.fill")
-                            .font(.system(size: 5))
-                            .foregroundStyle(.secondary)
-                            .padding(4)
-                    }
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).help(slot.flyout.isEmpty ? tool.label : "\(tool.label) · 右键选择同类工具").accessibilityLabel(tool.label)
-        .foregroundStyle(.primary)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .contextMenu {
-            ForEach(slot.flyout) { item in
-                Button { selectFlyout(item) } label: {
-                    Label("\(item.name) (\(item.key))", systemImage: item.isActive(session) ? "checkmark" : "")
-                }
-            }
-        }
+        ToolSlotButton(session: session, slot: slot, representative: representativeTool(for: slot),
+                       onSelect: { selectSlot(slot) }, onPick: { selectFlyout($0) })
     }
     /// What a slot's button shows and activates: the group's tool when it's in hand, else the group's last-used
     /// choice for the groups of distinct tools, else the group's default.
@@ -376,18 +347,6 @@ struct ContentView: View {
     private func rememberGroupChoice(_ tool: NavigationTool) {
         if tool == .spotHealing || tool == .remove || tool == .cloneStamp { lastRepairTool = tool.rawValue }
         if tool == .hand || tool == .zoom { lastNavigationTool = tool.rawValue }
-    }
-    @ViewBuilder
-    private func toolIcon(_ tool: NavigationTool) -> some View {
-        if tool == .gradient { GradientToolIcon().frame(width: 18, height: 18) }
-        else if tool == .cloneStamp { CloneStampToolIcon().frame(width: 18, height: 18) }
-        else if tool == .lasso, session.lassoKind == .polygonal { PolygonalLassoToolIcon().frame(width: 18, height: 18) }
-        else if tool == .wand, session.wandMode == .object { ObjectSelectionToolIcon().frame(width: 18, height: 18) }
-        // "textformat" has a Chinese variant (格式) that Apple swaps in when the app localizes to
-        // zh-Hans; the type tool keeps the Latin "Aa" instead.
-        else if tool == .type { Text("Aa").font(.system(size: 16, weight: .medium)) }
-        // The Marquee's icon follows its shape: a dashed circle in Ellipse mode.
-        else { Image(systemName: tool == .marquee && session.marqueeKind == .ellipse ? "circle.dashed" : session.symbol(for: tool)).font(.system(size: 17)) }
     }
     private var welcome: some View {
         NewCanvasSheet(session: session,
@@ -435,6 +394,92 @@ private struct ToolSlot: Identifiable {
     let tools: [NavigationTool]
     let flyout: [FlyoutItem]
     var id: String { tools.map(\.rawValue).joined() }
+}
+
+/// One button in the tool rail: activates its slot's tool, and when the slot groups several, right-click
+/// or press-and-hold pops the group's flyout next to the button.
+private struct ToolSlotButton: View {
+    @Bindable var session: EditorSession
+    let slot: ToolSlot
+    let representative: NavigationTool
+    let onSelect: () -> Void
+    let onPick: (ToolSlot.FlyoutItem) -> Void
+    @State private var flyoutShown = false
+    /// Set while the mouse is held on the button; a timer opens the flyout when the hold runs long.
+    /// (A plain LongPressGesture never fires here — SwiftUI Buttons on macOS swallow the press.)
+    @State private var pressStart: Date?
+
+    var body: some View {
+        let selected = slot.tools.contains(session.tool)
+        Button(action: onSelect) {
+            toolIcon(representative)
+                .frame(width: 36, height: 36)
+                .background(selected ? Color.white.opacity(0.12) : .clear,
+                            in: RoundedRectangle(cornerRadius: 7))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(selected ? Color.white.opacity(0.14) : .clear)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if !slot.flyout.isEmpty {
+                        Image(systemName: "arrowtriangle.down.fill")
+                            .font(.system(size: 5))
+                            .foregroundStyle(.secondary)
+                            .padding(4)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(slot.flyout.isEmpty ? representative.label : "\(representative.label) · 右键或长按选择同类工具").accessibilityLabel(representative.label)
+        .foregroundStyle(.primary)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .simultaneousGesture(DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                guard !slot.flyout.isEmpty, pressStart == nil, !flyoutShown else { return }
+                pressStart = .now
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    if pressStart != nil { flyoutShown = true }
+                }
+            }
+            .onEnded { _ in pressStart = nil })
+        .popover(isPresented: $flyoutShown, arrowEdge: .trailing) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(slot.flyout) { item in
+                    Button {
+                        onPick(item)
+                        flyoutShown = false
+                    } label: {
+                        Label("\(item.name) (\(item.key))", systemImage: item.isActive(session) ? "checkmark" : "")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .contextMenu {
+            ForEach(slot.flyout) { item in
+                Button { onPick(item) } label: {
+                    Label("\(item.name) (\(item.key))", systemImage: item.isActive(session) ? "checkmark" : "")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func toolIcon(_ tool: NavigationTool) -> some View {
+        if tool == .gradient { GradientToolIcon().frame(width: 18, height: 18) }
+        else if tool == .cloneStamp { CloneStampToolIcon().frame(width: 18, height: 18) }
+        else if tool == .lasso, session.lassoKind == .polygonal { PolygonalLassoToolIcon().frame(width: 18, height: 18) }
+        else if tool == .wand, session.wandMode == .object { ObjectSelectionToolIcon().frame(width: 18, height: 18) }
+        // "textformat" has a Chinese variant (格式) that Apple swaps in when the app localizes to
+        // zh-Hans; the type tool keeps the Latin "Aa" instead.
+        else if tool == .type { Text("Aa").font(.system(size: 16, weight: .medium)) }
+        // The Marquee's icon follows its shape: a dashed circle in Ellipse mode.
+        else { Image(systemName: tool == .marquee && session.marqueeKind == .ellipse ? "circle.dashed" : session.symbol(for: tool)).font(.system(size: 17)) }
+    }
 }
 
 extension ContentView {
