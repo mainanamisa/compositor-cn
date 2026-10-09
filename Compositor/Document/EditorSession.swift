@@ -253,6 +253,8 @@ final class EditorSession {
     /// The open filter (Filter menu), and the settings the next one starts from.
     var filterEdit: FilterEdit?
     var filterSettings = FilterSettings()
+    /// What Filter › Last Filter runs again.
+    var lastFilter: FilterKind?
     @ObservationIgnored var hueSaturationTask: Task<Void, Never>?
     /// The newest preview request while one is already rendering.
     @ObservationIgnored var hueSaturationPending: HueSaturationJob?
@@ -301,6 +303,20 @@ final class EditorSession {
     var showsGuides = ToolDefaults.bool("guides", true) { didSet { ToolDefaults.set(showsGuides, "guides") } }
     /// F: the canvas alone on black, filling the screen, with every panel and bar put away. F again brings them back.
     var canvasOnly = false
+    /// Nothing in progress for Escape to cancel (a transform, crop, lasso, shape, gradient, stroke or text), so in
+    /// fullscreen it leaves fullscreen instead.
+    var escapeHasNothingToCancel: Bool {
+        textDraft == nil && levels == nil && brushStroke == nil && warpStroke == nil && lassoDraft == nil
+            && shapeDraft == nil && gradientEdit == nil && cropRect == nil && guideDrag == nil && transformEdit == nil
+            && pixelMove == nil
+    }
+    /// Canvas Only can be switched: there's a canvas, and no text layer being typed or dialog open (Hue/Saturation,
+    /// Curves, the color picker…) for an F to belong to.
+    var canToggleCanvasOnly: Bool {
+        document != nil && textDraft == nil && filterEdit == nil && hueSaturation == nil && levels == nil
+            && colorPicker == nil && adjustmentEditingID == nil && effectsEditing == nil && colorRange == nil
+            && selectionAmountOperation == nil
+    }
     var showsRulers = ToolDefaults.bool("rulers", false) { didSet { ToolDefaults.set(showsRulers, "rulers") } }
     /// Master snap switch (View > Snap). On so today's layer/canvas snap keeps working.
     var snapEnabled = ToolDefaults.bool("snap", true) {

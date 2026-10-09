@@ -85,7 +85,7 @@ struct ShortcutDefinition: Identifiable {
             entry("填充背景色", "\u{7f}", 1, menu: true), entry("内容识别填充", "\u{7f}", 8, menu: true),
             entry("全选", "a", 1, menu: true), entry("取消选择", "d", 1, menu: true),
             entry("反向选择", "i", 9, menu: true), entry("选择主体", "a", 3, menu: true),
-            entry("曲线", "m", 1, menu: true), entry("色阶", "l", 1, menu: true),
+            entry("上次滤镜", "f", 5, menu: true), entry("曲线", "m", 1, menu: true), entry("色阶", "l", 1, menu: true),
             entry("色相/饱和度", "u", 1, menu: true), entry("反相像素 / 蒙版", "i", 1, menu: true),
             entry("画布大小", "c", 3, menu: true), entry("图像大小", "i", 3, menu: true),
             entry("变换图层 / 选区", "t", 1, menu: true), entry("复制 / 通过拷贝新建图层", "j", 1, menu: true),
@@ -97,7 +97,7 @@ struct ShortcutDefinition: Identifiable {
             entry("显示标尺", "r", 1, menu: true), entry("对齐", ";", 9, menu: true),
             entry("锁定参考线", ";", 3, menu: true)
         ]
-        for (title, key) in [("仅画布：全屏黑底，隐藏面板", "f"), ("选择工具", "a"), ("移动 / 变换工具", "v"), ("抓手工具", "h"),
+        for (title, key) in [("仅画布：全屏黑底，隐藏面板（Esc 也可退出）", "f"), ("选择工具", "a"), ("移动 / 变换工具", "v"), ("抓手工具", "h"),
             ("缩放工具", "z"), ("画笔工具", "b"), ("橡皮擦", "e"), ("污点修复", "j"),
             ("仿制图章", "s"), ("文字工具", "t"), ("渐变工具", "g"), ("形状工具", "u"),
             ("吸管工具", "i"), ("选框 / 循环形状", "m"), ("魔棒", "w"),

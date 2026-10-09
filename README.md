@@ -59,11 +59,12 @@ brew install --cask robbietilton-compositor
 - Gaussian Blur and Motion Blur that spread past a layer's edges
 - Add Noise, Vignette, Bloom / Glow, Tonal Contrast, Lens Correction and Remove Background
 - Live previews, limited to the selection when there is one
+- Last Filter (⌃⌘F) runs the last filter again with the same settings
 
 ### Canvas and files
 - Multiple projects in tabs
-- A command palette (⌘F): search every menu command and tool by name, as in Raycast or Obsidian, and run it with Return
-- Canvas Only (F): the canvas alone on black over the whole screen, with every panel put away; F again brings them back
+- Search Commands (⌘F): find every menu command and tool by name, as in Raycast or Obsidian, and run it with Return
+- Toggle Fullscreen (F): the canvas alone on black over the whole screen, with every panel put away; F or Esc brings them back
 - Rulers (⌘R), guides dragged from them, a layout grid with adjustable spacing and subdivisions, and Snap To for guides, grid, layers and document bounds
 - Crop with snapping, ratios including 3:4 and 9:16, and Option for symmetric cropping; with a selection, the crop starts at it
 - Canvas Size, Image Size and Trim

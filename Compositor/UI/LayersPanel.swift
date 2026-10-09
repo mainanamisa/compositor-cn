@@ -32,10 +32,10 @@ struct LayersPanel: View {
             Divider()
             // No spacing: each button's hit area supplies it (8 pt either side makes the 16 pt gap).
             HStack(spacing: 0) {
-                Button { session.addBlankLayer() } label: { Image(systemName: "plus.square").footerHitArea() }
+                Button { session.addBlankLayer() } label: { FooterIcon(systemName: "plus.square") }
                     .help("新建空白图层（⇧⌘N）").accessibilityLabel("新建空白图层")
                     .accessibilityIdentifier("addBlankLayer").disabled(!session.canEditLayers)
-                Button { session.groupSelectedLayers() } label: { Image(systemName: "folder.badge.plus").footerHitArea() }
+                Button { session.groupSelectedLayers() } label: { FooterIcon(systemName: "folder.badge.plus") }
                     .help("将所选图层编组（⌘G）").accessibilityLabel("新建组").disabled(!session.canEditLayers)
                 LayerMaskMenu(session: session)
                 Menu {
@@ -53,7 +53,7 @@ struct LayersPanel: View {
                 } label: { Image(systemName: "circle.lefthalf.filled").footerHitArea() }
                     .menuStyle(.borderlessButton).fixedSize().help("新建调整图层").disabled(!session.canEditLayers)
                 Spacer()
-                Button { session.deleteLayerOrMask() } label: { Image(systemName: "trash").footerHitArea() }
+                Button { session.deleteLayerOrMask() } label: { FooterIcon(systemName: "trash") }
                     .help(session.selectedEffect != nil ? "删除所选效果" : session.isMaskSelected ? "删除图层蒙版" : session.selectedLayerIDs.count > 1 ? "删除选中的多个图层" : "删除所选图层")
                     .accessibilityLabel(session.selectedEffect != nil ? "删除所选效果" : session.isMaskSelected ? "删除图层蒙版" : session.selectedLayerIDs.count > 1 ? "删除选中的多个图层" : "删除所选图层")
                     .accessibilityIdentifier("deleteLayer")
@@ -69,6 +69,21 @@ struct LayersPanel: View {
         }
     }
 
+}
+
+/// A footer button's icon: full strength when the button can be used, and as dim as the footer's menus (Effects,
+/// Adjustments) when it can't. A plain button with its own color doesn't dim when disabled, so the footer looked
+/// uneven, some disabled icons barely fading and others nearly gone.
+struct FooterIcon: View {
+    let systemName: String
+    @Environment(\.isEnabled) private var isEnabled
+    var body: some View {
+        // Disabled, as dim as the menus' icons (a quarter-strength white, measured): SwiftUI halves a disabled
+        // button's own color again, so the button asks for half-strength white.
+        Image(systemName: systemName)
+            .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.white.opacity(0.5)))
+            .footerHitArea()
+    }
 }
 
 extension View {

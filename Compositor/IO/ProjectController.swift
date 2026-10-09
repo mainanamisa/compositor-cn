@@ -333,7 +333,8 @@ final class ProjectController {
         alert.informativeText = "如果不存储，所做的更改将会丢失"
         alert.addButton(withTitle: "存储")
         alert.addButton(withTitle: "取消")
-        alert.addButton(withTitle: "Don’t Save") // Kept in English: CompositorTests/TypeToolTests.swift finds this button by title.
+        let dontSaveButton = alert.addButton(withTitle: "Don’t Save") // Kept in English: CompositorTests/TypeToolTests.swift finds this button by title.
+        dontSaveButton.hasDestructiveAction = true
         let response = await show(alert)
         if response == .alertFirstButtonReturn { return await saveCurrent() }
         return response == .alertThirdButtonReturn

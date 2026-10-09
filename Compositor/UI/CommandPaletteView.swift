@@ -74,7 +74,7 @@ final class CommandPaletteController {
     /// Left out of the palette: the palette itself and the system menus.
     /// Left out of the palette: the palette itself and the system menus. Both languages are listed: the standard
     /// menus' titles follow the system language, not the app's.
-    static let skipped: Set<String> = ["命令面板…", "Command Palette…", "窗口", "Window", "帮助", "Help", "服务", "Services"]
+    static let skipped: Set<String> = ["命令面板…", "Search Commands…", "Command Palette…", "窗口", "Window", "帮助", "Help", "服务", "Services"]
 
     private(set) var panel: PalettePanel?
     private weak var window: NSWindow?
@@ -94,11 +94,11 @@ final class CommandPaletteController {
                                                              close: { [weak self] in self?.close() }))
         // The panel keeps the size given below rather than growing to what SwiftUI would like.
         host.sizingOptions = []
-        host.frame = NSRect(x: 0, y: 0, width: 410, height: 290)
+        host.frame = NSRect(x: 0, y: 0, width: 460, height: 290)
         panel.contentView = host
-        panel.setContentSize(NSSize(width: 410, height: 290))
+        panel.setContentSize(NSSize(width: 460, height: 290))
         if let frame = window?.frame {
-            panel.setFrameOrigin(NSPoint(x: frame.midX - 205, y: frame.midY - 145))
+            panel.setFrameOrigin(NSPoint(x: frame.midX - 230, y: frame.midY - 145))
         } else {
             panel.center()
         }
