@@ -28,7 +28,7 @@ final class CompositorApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // AppKit's own switches for two of the Edit menu's text extras (see `removeSystemTextItems`).
+        // AppKit's own switches for two of the Edit menu's text extras (see `removeSystemExtras`).
         UserDefaults.standard.register(defaults: ["NSDisabledDictationMenuItem": true, "NSDisabledCharacterPaletteMenuItem": true])
         // Always dark, alerts and open/save panels included, whatever the Mac is set to.
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -38,24 +38,37 @@ final class CompositorApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // macOS adds Writing Tools, AutoFill, Start Dictation and Emoji & Symbols to the Edit menu; they're for typing
-        // text, not editing images, and only got in the way. Taken out once the menus exist, and again whenever the
+        // text, not editing images, and only got in the way. It adds Enter Full Screen (Globe-F) to the View menu,
+        // beside Canvas Only (F), which does the same job without the slow slide into a new space. Taken out once the menus exist, and again whenever the
         // menu bar is opened, in case SwiftUI has rebuilt them since.
-        DispatchQueue.main.async { Self.removeSystemTextItems() }
-        // F switches Canvas Only from anywhere in the editor: the canvas, the Layers panel, the tool bar.
+        DispatchQueue.main.async { Self.removeSystemExtras() }
+        // View › Canvas Only's key is a plain F, and the menu takes a plain letter even while something is being
+        // typed. So an F meant for a text field (the palette's search, a layer's name, a number) goes straight to it,
+        // before the menu sees it.
+        // Escape leaves fullscreen too, once there's nothing in progress for it to cancel first.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.isCanvasOnlyKey(event) else { return event }
+            guard let self, event.keyCode == 53, event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+                  self.session.canvasOnly, self.session.escapeHasNothingToCancel, NSApp.keyWindow === self.projects.window,
+                  !(NSApp.keyWindow?.firstResponder is NSText) else { return event }
             self.toggleCanvasOnly()
+            return nil
+        }
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.charactersIgnoringModifiers?.lowercased() == "f",
+                  event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                  let text = NSApp.keyWindow?.firstResponder as? NSText else { return event }
+            text.keyDown(with: event)
             return nil
         }
         // Run as the menu opens (no queue), before it's drawn.
         NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { _ in
-            MainActor.assumeIsolated { Self.removeSystemTextItems() }
+            MainActor.assumeIsolated { Self.removeSystemExtras() }
         }
         // Writing Tools and AutoFill are put back each time the Edit menu opens, so they're taken out again as they're
         // added, before the menu is drawn.
         NotificationCenter.default.addObserver(forName: NSMenu.didAddItemNotification, object: nil, queue: nil) { note in
             guard let menu = note.object as? NSMenu, let index = note.userInfo?["NSMenuItemIndex"] as? Int else { return }
-            MainActor.assumeIsolated { Self.removeIfSystemTextItem(at: index, in: menu) }
+            MainActor.assumeIsolated { Self.removeIfSystemExtra(at: index, in: menu) }
         }
     }
 
@@ -123,40 +136,27 @@ final class CompositorApplicationDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A plain F in the editor window, with nothing to type into and no dialog open: not while a text field or a text
-    /// layer has the keyboard, and not over Hue/Saturation, Curves, the color picker or another dialog.
-    private func isCanvasOnlyKey(_ event: NSEvent) -> Bool {
-        guard event.charactersIgnoringModifiers?.lowercased() == "f", !event.isARepeat,
-              event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-              let window = NSApp.keyWindow, window === projects.window, window.attachedSheet == nil,
-              !(window.firstResponder is NSText) else { return false }
-        let session = session
-        return session.document != nil && session.textDraft == nil && session.filterEdit == nil && session.hueSaturation == nil
-            && session.levels == nil && session.colorPicker == nil && session.adjustmentEditingID == nil
-            && session.effectsEditing == nil && session.colorRange == nil && session.selectionAmountOperation == nil
-    }
-
-    /// Takes macOS's text-typing extras out of the menu bar's menus, found by what they do rather than their titles, so
+    /// Takes macOS's extras (text-typing items and Enter Full Screen) out of the menu bar's menus, found by what they do rather than their titles, so
     /// it holds in any language, then tidies the separators they leave behind.
-    @MainActor static func removeSystemTextItems() {
+    @MainActor static func removeSystemExtras() {
         for top in NSApp.mainMenu?.items ?? [] {
             guard let menu = top.submenu else { continue }
-            let extras = menu.items.filter(isSystemTextItem)
+            let extras = menu.items.filter(isSystemExtra)
             guard !extras.isEmpty else { continue }
             extras.forEach(menu.removeItem)
             tidySeparators(menu)
         }
     }
 
-    /// One item just added to a menu bar menu: taken out again if it's one of the text extras.
-    @MainActor private static func removeIfSystemTextItem(at index: Int, in menu: NSMenu) {
-        guard menu.supermenu === NSApp.mainMenu, menu.items.indices.contains(index), isSystemTextItem(menu.items[index]) else { return }
+    /// One item just added to a menu bar menu: taken out again if it's one of macOS's extras.
+    @MainActor private static func removeIfSystemExtra(at index: Int, in menu: NSMenu) {
+        guard menu.supermenu === NSApp.mainMenu, menu.items.indices.contains(index), isSystemExtra(menu.items[index]) else { return }
         menu.removeItem(at: index)
         tidySeparators(menu)
     }
 
-    private static func isSystemTextItem(_ item: NSMenuItem) -> Bool {
-        let actions: Set<String> = ["startDictation:", "orderFrontCharacterPalette:"]
+    private static func isSystemExtra(_ item: NSMenuItem) -> Bool {
+        let actions: Set<String> = ["startDictation:", "orderFrontCharacterPalette:", "toggleFullScreen:"]
         let identifiers: Set<String> = ["__NSTextViewContextSubmenuIdentifierWritingTools", "_NSMenuItemAutoFillIdentifier",
                                         "_NSMenuItemLegacyWritingToolsSeparatorIdentifier"]
         return item.identifier.map { identifiers.contains($0.rawValue) } == true

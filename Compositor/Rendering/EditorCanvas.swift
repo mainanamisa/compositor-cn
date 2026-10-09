@@ -1800,6 +1800,11 @@ final class CanvasView: NSView {
         }
         if spaceHeld || session.tool == .hand {
             lastDragPoint = point
+            // Held closed for the whole drag, as a crop or transform drag holds its cursor: Space repeats while it's
+            // held, and each repeat put the open hand back.
+            dragCursor = .closedHand
+            cursorLockWindow = window
+            cursorLockWindow?.disableCursorRects()
             NSCursor.closedHand.set()
         } else if session.tool.isBrushTool, let document = session.document {
             let pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
@@ -2101,6 +2106,9 @@ final class CanvasView: NSView {
             if session.transformEdit?.persistent == false { session.commitTransform() }
         }
         lastDragPoint = nil
+        releaseDragCursor()
+        // Still holding Space (or on the Hand tool), the hand opens again as the button comes up.
+        if spaceHeld || session.tool == .hand { NSCursor.openHand.set() }
         // Leaving mid-drag keeps the drag's cursor, so a drag released outside the canvas (over
         // the Layers panel, say) must put the arrow back itself.
         if session.document != nil {

@@ -8,12 +8,11 @@ struct LayerMaskMenu: View {
     var body: some View {
         Button {
             session.addMask(revealing: NSApp.currentEvent?.modifierFlags.contains(.option) != true)
-        } label: { Image(systemName: "rectangle.inset.filled").footerHitArea() }
-            .buttonStyle(.borderless)
-            .help(session.selection == nil ? "添加图层蒙版（Option 点击添加黑色蒙版）"
-                  : "添加显示选区的图层蒙版（Option 点击隐藏选区）")
-            .accessibilityLabel("添加图层蒙版")
-            .disabled(!session.canEditMask || session.activeLayer?.mask != nil)
+        } label: { FooterIcon(systemName: "rectangle.inset.filled") }
+        .help(session.selection == nil ? "添加图层蒙版（Option 点击添加黑色蒙版）"
+              : "添加显示选区的图层蒙版（Option 点击隐藏选区）")
+        .accessibilityLabel("添加图层蒙版")
+        .disabled(!session.canEditMask || session.activeLayer?.mask != nil)
     }
 }
 

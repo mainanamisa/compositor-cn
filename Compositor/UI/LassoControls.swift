@@ -6,71 +6,76 @@ struct LassoControls: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(session.tool == .marquee ? "选框" : session.tool == .wand ? "魔棒" : "套索").font(ToolHeaderStyle.titleFont)
-            if session.tool == .marquee {
-                Picker("形状", selection: Binding(get: { session.marqueeKind }, set: { kind in
-                    session.cancelLasso()
-                    session.marqueeKind = kind
-                })) {
-                    ForEach(LassoKind.marqueeChoices, id: \.self) { Text($0.rawValue).tag($0) }
+            ScrollView(.horizontal) {
+                HStack(spacing: 12) {
+                if session.tool == .marquee {
+                    Picker("形状", selection: Binding(get: { session.marqueeKind }, set: { kind in
+                        session.cancelLasso()
+                        session.marqueeKind = kind
+                    })) {
+                        ForEach(LassoKind.marqueeChoices, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("按 M 在矩形和椭圆之间切换")
+                }
+                if session.tool == .wand {
+                    Picker("模式", selection: Binding(get: { session.wandMode }, set: { mode in
+                        session.cancelLasso()
+                        session.wandMode = mode
+                    })) {
+                        ForEach(WandMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("按 Tab 在魔棒和对象之间切换")
+                }
+                if session.tool == .lasso {
+                    Picker("套索", selection: Binding(get: { session.lassoKind }, set: { kind in
+                        session.cancelLasso()
+                        session.lassoKind = kind
+                    })) {
+                        ForEach(LassoKind.lassoChoices, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("按 L 在徒手和多边形之间切换")
+                }
+                // Shows held Shift/Option (or an outline's mode) live; clicking sets the choice.
+                Picker("模式", selection: Binding(get: { session.displayedSelectionMode },
+                                                  set: { session.selectionModeChoice = $0 })) {
+                    ForEach(SelectionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("按 M 在矩形和椭圆之间切换")
-            }
-            if session.tool == .wand {
-                Picker("模式", selection: Binding(get: { session.wandMode }, set: { mode in
-                    session.cancelLasso()
-                    session.wandMode = mode
-                })) {
-                    ForEach(WandMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                .help("按住 Shift 添加到选区，按住 Option 从选区减去（仅对当前一次有效）")
+                if session.tool == .wand, session.wandMode == .wand { wandControls }
+                if session.tool == .wand, session.wandMode == .object { objectSelectionControls }
+                // Rectangles snap to whole pixels, so smoothing doesn't apply (as in Photoshop); ellipses curve.
+                if session.tool == .lasso || session.tool == .wand || (session.tool == .marquee && session.marqueeKind == .ellipse) {
+                    Toggle("消除锯齿", isOn: $session.selectionAntialiased)
+                        .help(session.tool == .wand && session.wandMode == .object ? "平滑检测到的对象轮廓；关闭则使用原始像素蒙版" : "平滑选区边缘；关闭则为硬像素边缘")
                 }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("按 Tab 在魔棒和对象之间切换")
-            }
-            if session.tool == .lasso {
-                Picker("套索", selection: Binding(get: { session.lassoKind }, set: { kind in
-                    session.cancelLasso()
-                    session.lassoKind = kind
-                })) {
-                    ForEach(LassoKind.lassoChoices, id: \.self) { Text($0.rawValue).tag($0) }
+                Divider().frame(height: 18)
+                modifyControl("扩展", amount: $session.selectionExpandAmount) {
+                    session.expandSelection(by: session.selectionExpandAmount)
                 }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("按 L 在徒手和多边形之间切换")
+                modifyControl("收缩", amount: $session.selectionContractAmount) {
+                    session.contractSelection(by: session.selectionContractAmount)
+                }
+                // Softens the selection's edge, as Select → Feather does.
+                HStack(spacing: 5) {
+                    Button("羽化") { session.featherSelection(by: session.selectionFeatherAmount) }
+                        .disabled(!session.canModifySelection)
+                        .help("将选区边缘按此像素数渐隐")
+                    TextField("羽化", value: Binding(get: { Double(session.selectionFeatherAmount) },
+                                                        set: { session.selectionFeatherAmount = $0.isFinite ? Int(min(250, max(1, $0))) : 2 }),
+                              format: .number.precision(.fractionLength(0)))
+                        .frame(width: 48).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
+                        .arrowSteps(value: { Double(session.selectionFeatherAmount) },
+                                    change: { session.selectionFeatherAmount = Int(min(250, max(1, $0))) })
+                        .unitSuffix("px", scrubValue: $session.selectionFeatherAmount,
+                                    sensitivity: 1, range: 1...250)
+                }
             }
-            // Shows held Shift/Option (or an outline's mode) live; clicking sets the choice.
-            Picker("模式", selection: Binding(get: { session.displayedSelectionMode },
-                                              set: { session.selectionModeChoice = $0 })) {
-                ForEach(SelectionMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            .pickerStyle(.segmented).labelsHidden().fixedSize()
-            .help("按住 Shift 添加到选区，按住 Option 从选区减去（仅对当前一次有效）")
-            if session.tool == .wand, session.wandMode == .wand { wandControls }
-            if session.tool == .wand, session.wandMode == .object { objectSelectionControls }
-            // Rectangles snap to whole pixels, so smoothing doesn't apply (as in Photoshop); ellipses curve.
-            if session.tool == .lasso || session.tool == .wand || (session.tool == .marquee && session.marqueeKind == .ellipse) {
-                Toggle("消除锯齿", isOn: $session.selectionAntialiased)
-                    .help(session.tool == .wand && session.wandMode == .object ? "平滑检测到的对象轮廓；关闭则使用原始像素蒙版" : "平滑选区边缘；关闭则为硬像素边缘")
-            }
-            Divider().frame(height: 18)
-            modifyControl("扩展", amount: $session.selectionExpandAmount) {
-                session.expandSelection(by: session.selectionExpandAmount)
-            }
-            modifyControl("收缩", amount: $session.selectionContractAmount) {
-                session.contractSelection(by: session.selectionContractAmount)
-            }
-            // Softens the selection's edge, as Select → Feather does.
-            HStack(spacing: 5) {
-                Button("羽化") { session.featherSelection(by: session.selectionFeatherAmount) }
-                    .disabled(!session.canModifySelection)
-                    .help("将选区边缘按此像素数渐隐")
-                TextField("羽化", value: Binding(get: { Double(session.selectionFeatherAmount) },
-                                                    set: { session.selectionFeatherAmount = $0.isFinite ? Int(min(250, max(1, $0))) : 2 }),
-                          format: .number.precision(.fractionLength(0)))
-                    .frame(width: 48).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
-                    .arrowSteps(value: { Double(session.selectionFeatherAmount) },
-                                change: { session.selectionFeatherAmount = Int(min(250, max(1, $0))) })
-                    .unitSuffix("px", scrubValue: $session.selectionFeatherAmount,
-                                sensitivity: 1, range: 1...250)
-            }
+            .scrollIndicators(.hidden)
             Spacer(minLength: 0)
             if let selection = session.selection {
                 if selection.isEmpty { Text("空选区").foregroundStyle(.secondary) }

@@ -6,27 +6,32 @@ struct GradientControls: View {
     var body: some View {
         HStack(spacing: 12) {
             Text("渐变").font(ToolHeaderStyle.titleFont)
-            Picker("形状", selection: $session.gradientSettings.shape) {
-                ForEach(GradientShape.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            ScrollView(.horizontal) {
+                HStack(spacing: 12) {
+                Picker("形状", selection: $session.gradientSettings.shape) {
+                    ForEach(GradientShape.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("线性沿直线过渡；径向从起点向外扩散")
+                swatch
+                Picker("颜色", selection: $session.gradientSettings.style) {
+                    ForEach(GradientStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .labelsHidden().fixedSize()
+                Toggle("反向", isOn: $session.gradientSettings.reversed)
+                Text("不透明度").scrubbable(sensitivity: 0.01, value: $session.gradientSettings.opacity, range: 0.01...1)
+                Slider(value: $session.gradientSettings.opacity, in: 0.01...1).frame(width: 100)
+                TextField("不透明度", value: Binding<Double>(get: { Double(session.gradientSettings.opacity * 100) },
+                    set: { session.gradientSettings.opacity = $0.isFinite ? CGFloat(min(100, max(1, $0)) / 100) : 1 }),
+                    format: .number.precision(.fractionLength(0)))
+                    .frame(width: 42).textFieldStyle(.roundedBorder)
+                    .arrowSteps(value: { Double(session.gradientSettings.opacity * 100) },
+                                change: { session.gradientSettings.opacity = CGFloat(min(100, max(1, $0)) / 100) })
+                    .help("按 1–9 设置 10–90%，按 0 设置 100%")
+                    .unitSuffix("%")
+                }
             }
-            .pickerStyle(.segmented).labelsHidden().fixedSize()
-            .help("线性沿直线过渡；径向从起点向外扩散")
-            swatch
-            Picker("颜色", selection: $session.gradientSettings.style) {
-                ForEach(GradientStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .labelsHidden().fixedSize()
-            Toggle("反向", isOn: $session.gradientSettings.reversed)
-            Text("不透明度").scrubbable(sensitivity: 0.01, value: $session.gradientSettings.opacity, range: 0.01...1)
-            Slider(value: $session.gradientSettings.opacity, in: 0.01...1).frame(width: 100)
-            TextField("不透明度", value: Binding<Double>(get: { Double(session.gradientSettings.opacity * 100) },
-                set: { session.gradientSettings.opacity = $0.isFinite ? CGFloat(min(100, max(1, $0)) / 100) : 1 }),
-                format: .number.precision(.fractionLength(0)))
-                .frame(width: 42).textFieldStyle(.roundedBorder)
-                .arrowSteps(value: { Double(session.gradientSettings.opacity * 100) },
-                            change: { session.gradientSettings.opacity = CGFloat(min(100, max(1, $0)) / 100) })
-                .help("按 1–9 设置 10–90%，按 0 设置 100%")
-                .unitSuffix("%")
+            .scrollIndicators(.hidden)
             Spacer(minLength: 0)
             if session.isMaskSelected { Text("蒙版").foregroundStyle(.secondary) }
             if session.gradientEdit != nil {

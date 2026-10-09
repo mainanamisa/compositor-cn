@@ -840,6 +840,7 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         nameLabel.usesSingleLineMode = true
         nameLabel.maximumNumberOfLines = 1
         nameLabel.font = .systemFont(ofSize: 13)
+        nameLabel.wantsLayer = true
         dimensions.font = .systemFont(ofSize: 10)
         dimensions.textColor = .secondaryLabelColor
         for view in [eye, disclosure, thumbnail, linkButton, maskThumbnail, disabledMaskMark, nameLabel, dimensions] {
@@ -1007,9 +1008,7 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         renaming = true
         nameLabel.isEditable = true
         nameLabel.isSelectable = true
-        nameLabel.isBezeled = true
-        nameLabel.bezelStyle = .roundedBezel
-        nameLabel.drawsBackground = true
+        nameLabel.layer?.backgroundColor = NSColor.quaternaryLabelColor.cgColor
         nameLabel.delegate = self
         nameLabel.stringValue = layerName
         window?.makeFirstResponder(nameLabel)
@@ -1019,8 +1018,7 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         renaming = false
         nameLabel.isEditable = false
         nameLabel.isSelectable = false
-        nameLabel.isBezeled = false
-        nameLabel.drawsBackground = false
+        nameLabel.layer?.backgroundColor = nil
         nameLabel.delegate = nil
     }
     private func endRenaming(keeping: Bool) {
