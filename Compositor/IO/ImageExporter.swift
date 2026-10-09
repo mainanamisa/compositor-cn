@@ -102,10 +102,32 @@ actor ImageExporter {
     }
 
     func pngData(_ snapshot: ProjectSnapshot) throws -> Data {
-        let raster = try render(snapshot)
-        return try encode(raster.image, type: .png, properties: [
+        try pngData(render(snapshot))
+    }
+
+    func pngData(_ raster: ExportRaster) throws -> Data {
+        try encode(raster.image, type: .png, properties: [
             kCGImagePropertyDPIWidth: raster.resolution, kCGImagePropertyDPIHeight: raster.resolution
         ] as CFDictionary)
+    }
+
+    /// The flattened canvas at another size, for Export As: resampled at high quality, keeping its resolution, so a
+    /// smaller copy is a smaller print too.
+    func resized(_ raster: ExportRaster, width: Int, height: Int) throws -> ExportRaster {
+        guard width != raster.image.width || height != raster.image.height else { return raster }
+        guard (1...DocumentLimits.maxSide).contains(width), (1...DocumentLimits.maxSide).contains(height),
+              width * height <= DocumentLimits.maxSurfacePixels else { throw ExportError.tooLarge }
+        try Task.checkCancellation()
+        return try autoreleasepool {
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ExportError.render }
+            context.interpolationQuality = .high
+            context.draw(raster.image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            guard let image = context.makeImage() else { throw ExportError.render }
+            return ExportRaster(image: image, resolution: raster.resolution)
+        }
     }
 
     private func encode(_ image: CGImage, type: UTType, properties: CFDictionary? = nil) throws -> Data {
@@ -121,27 +143,27 @@ actor ImageExporter {
     func jpeg(_ raster: ExportRaster, options: JPEGOptions) throws -> JPEGResult {
         try Task.checkCancellation()
         return try autoreleasepool {
-            let image = raster.image
-            let flattened = try flatten(image, red: options.red, green: options.green, blue: options.blue)
+            let flattened = try flattened(raster, over: CGColor(srgbRed: options.red, green: options.green,
+                                                                blue: options.blue, alpha: 1))
             try Task.checkCancellation()
             let data = try encode(flattened, type: .jpeg,
                 properties: [kCGImageDestinationLossyCompressionQuality: min(1, max(0, options.quality)),
                              kCGImagePropertyDPIWidth: raster.resolution,
                              kCGImagePropertyDPIHeight: raster.resolution] as CFDictionary)
             try Task.checkCancellation()
-            let preview = try previewThumbnail(data, pixelSize: min(max(image.width, image.height), 8192))
+            let preview = try previewThumbnail(data, pixelSize: min(max(flattened.width, flattened.height), 8192))
             return JPEGResult(data: data, preview: preview)
         }
     }
 
-    /// The image on the matte color, for formats without alpha.
-    private func flatten(_ image: CGImage, red: CGFloat, green: CGFloat, blue: CGFloat) throws -> CGImage {
-        guard let context = CGContext(data: nil, width: image.width, height: image.height,
-            bitsPerComponent: 8, bytesPerRow: image.width * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw ExportError.render }
-        context.setFillColor(CGColor(colorSpace: context.colorSpace!, components: [red, green, blue, 1])!)
+    /// The picture over a solid color, as a page with that background shows it.
+    func flattened(_ raster: ExportRaster, over background: CGColor) throws -> CGImage {
+        let image = raster.image
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw ExportError.render }
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.setFillColor(background)
         context.fill(bounds)
         context.draw(image, in: bounds)
         guard let flattened = context.makeImage() else { throw ExportError.render }
@@ -161,51 +183,61 @@ actor ImageExporter {
         return preview
     }
 
-    /// The image as a single-page PDF whose page is the image's pixel size; alpha is kept as drawn.
-    private func pdfData(_ image: CGImage) throws -> Data {
-        let data = NSMutableData()
-        var mediaBox = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-        guard let consumer = CGDataConsumer(data: data),
-              let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { throw ExportError.encode }
-        context.beginPDFPage(nil)
-        context.draw(image, in: mediaBox)
-        context.endPDFPage()
-        context.closePDF()
-        return data as Data
-    }
-
-    /// Encodes the raster in any format the Export As dialog offers. The preview decodes the encoded bytes, so
-    /// lossy artifacts and GIF's palette reduction show before saving.
-    func encode(_ raster: ExportRaster, options: ExportOptions) throws -> ExportResult {
+    /// Encodes the raster in one of the Export As dialog's extra formats (HEIC, WebP, TIFF, GIF, BMP). The preview
+    /// decodes the encoded bytes, so lossy artifacts and GIF's palette reduction show before saving.
+    func encode(_ raster: ExportRaster, format: ExportFormat, options: JPEGOptions) throws -> JPEGResult {
         try Task.checkCancellation()
         return try autoreleasepool {
-            let image = options.format.supportsAlpha ? raster.image
-                : try flatten(raster.image, red: options.red, green: options.green, blue: options.blue)
+            let image = format.supportsAlpha ? raster.image
+                : try flattened(raster, over: CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                      components: [options.red, options.green, options.blue, 1])!)
             try Task.checkCancellation()
-            let data: Data
-            switch options.format {
-            case .pdf:
-                data = try pdfData(image)
-            default:
-                var properties: [CFString: Any] = [
-                    kCGImagePropertyDPIWidth: raster.resolution,
-                    kCGImagePropertyDPIHeight: raster.resolution
-                ]
-                if options.format.supportsQuality {
-                    properties[kCGImageDestinationLossyCompressionQuality] = min(1, max(0, options.quality))
-                }
-                data = try encode(image, type: options.format.utType, properties: properties as CFDictionary)
+            var properties: [CFString: Any] = [
+                kCGImagePropertyDPIWidth: raster.resolution,
+                kCGImagePropertyDPIHeight: raster.resolution
+            ]
+            if format.supportsQuality {
+                properties[kCGImageDestinationLossyCompressionQuality] = min(1, max(0, options.quality))
             }
+            let data = try encode(image, type: format.type, properties: properties as CFDictionary)
             try Task.checkCancellation()
-            // A PDF page holds the untouched image, so the raster itself is the faithful preview.
-            let preview = options.format == .pdf ? image
-                : try previewThumbnail(data, pixelSize: min(max(image.width, image.height), 8192))
-            return ExportResult(data: data, preview: preview)
+            let preview = try previewThumbnail(data, pixelSize: min(max(image.width, image.height), 8192))
+            return JPEGResult(data: data, preview: preview)
         }
     }
 
     func exportPNG(_ snapshot: ProjectSnapshot, to url: URL) throws {
         let data = try pngData(snapshot)
+        try write(data, to: url)
+    }
+
+    /// One page the document's printed size (its pixels at its resolution), holding the flattened canvas at full
+    /// resolution. Core Graphics keeps the pixels lossless, and transparency stays transparent, as in a PNG.
+    func pdfData(_ snapshot: ProjectSnapshot) throws -> Data {
+        try pdfData(render(snapshot))
+    }
+
+    /// `background` fills the page under the picture; nil leaves it clear, as a viewer then shows its own paper.
+    func pdfData(_ raster: ExportRaster, background: CGColor? = nil) throws -> Data {
+        let pointsPerPixel = 72 / (raster.resolution > 0 ? raster.resolution : 72)
+        var page = CGRect(x: 0, y: 0, width: CGFloat(raster.image.width) * pointsPerPixel,
+                          height: CGFloat(raster.image.height) * pointsPerPixel)
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data),
+              let context = CGContext(consumer: consumer, mediaBox: &page, nil) else { throw ExportError.encode }
+        context.beginPDFPage(nil)
+        if let background {
+            context.setFillColor(background)
+            context.fill(page)
+        }
+        context.draw(raster.image, in: page)
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
+
+    func exportPDF(_ snapshot: ProjectSnapshot, to url: URL) throws {
+        let data = try pdfData(snapshot)
         try write(data, to: url)
     }
 
@@ -238,53 +270,3 @@ nonisolated struct JPEGResult: @unchecked Sendable {
     let preview: CGImage
 }
 
-/// One choice in the Export As dialog's format picker. UI-only: the project file never stores it.
-nonisolated enum ExportFormat: String, CaseIterable, Sendable {
-    case png, jpeg, heic, webp, tiff, gif, bmp, pdf
-    var title: String {
-        switch self {
-        case .webp: "WebP"
-        default: rawValue.uppercased()
-        }
-    }
-    var utType: UTType {
-        switch self {
-        case .png: .png
-        case .jpeg: .jpeg
-        case .heic: .heic
-        case .webp: .webP
-        case .tiff: .tiff
-        case .gif: .gif
-        case .bmp: .bmp
-        case .pdf: .pdf
-        }
-    }
-    var fileExtension: String {
-        switch self {
-        case .jpeg: "jpg"
-        default: rawValue
-        }
-    }
-    /// Lossy formats get the dialog's quality slider.
-    var supportsQuality: Bool { [.jpeg, .heic, .webp].contains(self) }
-    /// The rest flatten transparency onto the matte color, JPEG-fashion.
-    var supportsAlpha: Bool { [.png, .heic, .webp, .tiff, .pdf].contains(self) }
-    /// The formats this Mac can actually write, in picker order. PDF always is: it goes through CGPDFContext.
-    /// Probing replaces CGImageDestinationGetTypeIDs(), which the macOS 27 SDK removed from the headers; a
-    /// destination for an unsupported type fails to create.
-    static var available: [ExportFormat] {
-        allCases.filter { $0 == .pdf || CGImageDestinationCreateWithData(NSMutableData(), $0.utType.identifier as CFString, 1, nil) != nil }
-    }
-}
-
-nonisolated struct ExportOptions: Equatable, Sendable {
-    var format: ExportFormat = .jpeg
-    var quality: Double = 0.85
-    var red: CGFloat = 1
-    var green: CGFloat = 1
-    var blue: CGFloat = 1
-}
-nonisolated struct ExportResult: @unchecked Sendable {
-    let data: Data
-    let preview: CGImage
-}

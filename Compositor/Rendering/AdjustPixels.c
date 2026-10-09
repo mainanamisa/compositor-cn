@@ -233,18 +233,26 @@ static void scale_luminance(double *r, double *g, double *b, double target) {
     *b = camera_clamp(*b * scale);
 }
 
-static double tone_highlights(double y, double amount) {
-    double t = camera_clamp((y - 0.5) / 0.5);
-    double weight = t * t;
-    if (amount >= 0) return camera_clamp(y + amount * weight * (1.0 - y));
-    return camera_clamp(y + amount * weight * (y - 0.5));
+// A bump over a range of tones, 0 at both ends: u(1 - 2u)², largest a sixth of the way in. Its slope runs from 1
+// down to -1/3, so a curve adding up to three times it (or taking away up to once it) keeps rising: tones never swap
+// places.
+static double tone_bump(double u) {
+    if (u <= 0 || u >= 0.5) return 0;
+    double rest = 1.0 - 2.0 * u;
+    return u * rest * rest;
 }
 
+// Shadows lifts (or deepens) the dark tones, most a third of the way up to middle gray, leaving black at black and
+// middle gray where it is. It once lifted black itself to middle gray, above the tones just over it, so the darkest,
+// least certain pixels were the ones stretched furthest: a lifted dark area broke into blotches of color.
 static double tone_shadows(double y, double amount) {
-    double t = camera_clamp((0.5 - y) / 0.5);
-    double weight = t * t;
-    if (amount >= 0) return camera_clamp(y + amount * weight * (0.5 - y));
-    return camera_clamp(y + amount * weight * y);
+    return camera_clamp(y + amount * (amount >= 0 ? 2.5 : 1.0) * tone_bump(y));
+}
+
+// Highlights, the same in the light tones: white stays white, and pulling them down no longer drops white below the
+// tones under it.
+static double tone_highlights(double y, double amount) {
+    return camera_clamp(y + amount * (amount >= 0 ? 1.0 : 2.5) * tone_bump(1.0 - y));
 }
 
 // The top quarter is the white point: +1 maps 0.875 to 1, −1 pulls everything above 0.75 down to 0.75.

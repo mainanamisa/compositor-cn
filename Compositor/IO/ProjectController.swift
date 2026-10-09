@@ -41,26 +41,66 @@ final class ProjectController {
     private var writing: Task<Bool, Never>?
     func finishWriting() async { if let writing { _ = await writing.value } }
 
+    /// File › Export PNG…: the flattened canvas, lossless, straight to a save panel.
     func exportPNG() async {
         guard session.document != nil, begin() else { return }
         defer { session.isProjectBusy = false }
         guard let snapshot = session.projectSnapshot() else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.title = "导出 PNG"
-        panel.nameFieldStringValue = (session.projectURL?.deletingPathExtension().lastPathComponent ?? "未命名") + ".png"
-        let response: NSApplication.ModalResponse
-        if let window { response = await panel.beginSheetModal(for: window) }
-        else { response = await panel.begin() }
-        guard response == .OK, let url = panel.url else { return }
+        guard let url = await savePanel(for: .png) else { return }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do { try await ImageExporter.shared.exportPNG(snapshot, to: url) }
         catch { await showError("无法导出 PNG", error: error) }
     }
 
+    /// File › Export As…: PNG, JPEG or a one-page PDF, at the canvas's size or scaled, previewed first. Export JPEG…
+    /// opens it on JPEG.
+    func exportAs(start: ExportFormat? = nil) async {
+        guard let window, session.document != nil, begin() else { return }
+        defer { session.isProjectBusy = false }
+        guard let snapshot = session.projectSnapshot() else { return }
+        do {
+            let raster = try await ImageExporter.shared.render(snapshot)
+            let chosen: (data: Data, format: ExportFormat)? = await withCheckedContinuation { continuation in
+                let sheet = NSWindow()
+                sheet.styleMask = [.titled, .fullSizeContentView]
+                sheet.title = "导出为"
+                sheet.contentViewController = NSHostingController(rootView: ExportAsSheet(
+                    raster: raster, session: session, format: start ?? lastExportFormat) { chosen in
+                    window.endSheet(sheet)
+                    sheet.orderOut(nil)
+                    // Release the hosted view and its closure after dismissal.
+                    sheet.contentViewController = nil
+                    continuation.resume(returning: chosen)
+                })
+                window.beginSheet(sheet)
+            }
+            guard let chosen else { return }
+            lastExportFormat = chosen.format
+            guard let url = await savePanel(for: chosen.format) else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            try await ImageExporter.shared.write(chosen.data, to: url)
+        } catch { await showError("无法导出图像", error: error) }
+    }
+
+    /// The format Export As last used, offered first next time.
+    private var lastExportFormat = ExportFormat.png
+
+    /// Where an export goes: the project's name, with the format's extension.
+    private func savePanel(for format: ExportFormat) async -> URL? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [format.type]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.title = "导出 " + format.rawValue
+        panel.nameFieldStringValue = (session.projectURL?.deletingPathExtension().lastPathComponent ?? "未命名")
+            + "." + (format.type.preferredFilenameExtension ?? format.rawValue.lowercased())
+        let response: NSApplication.ModalResponse
+        if let window { response = await panel.beginSheetModal(for: window) }
+        else { response = await panel.begin() }
+        return response == .OK ? panel.url : nil
+    }
     func canvasSize() async {
         guard let window, let document = session.document, begin() else { return }
         defer { session.isProjectBusy = false }
@@ -157,73 +197,6 @@ final class ProjectController {
         session.gridAppearance = settings?.1 ?? original.appearance
     }
 
-    func exportJPEG() async {
-        guard let window, session.document != nil, begin() else { return }
-        defer { session.isProjectBusy = false }
-        guard let snapshot = session.projectSnapshot() else { return }
-        do {
-            let raster = try await ImageExporter.shared.render(snapshot)
-            let data: Data? = await withCheckedContinuation { continuation in
-                let sheet = NSWindow()
-                sheet.styleMask = [.titled, .fullSizeContentView]
-                sheet.title = "导出 JPEG"
-                sheet.contentViewController = NSHostingController(rootView: JPEGExportSheet(raster: raster, session: session) { data in
-                    window.endSheet(sheet)
-                    sheet.orderOut(nil)
-                    // Release the hosted view and its closure after dismissal.
-                    sheet.contentViewController = nil
-                    continuation.resume(returning: data)
-                })
-                window.beginSheet(sheet)
-            }
-            guard let data else { return }
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.jpeg]
-            panel.canCreateDirectories = true
-            panel.isExtensionHidden = false
-            panel.title = "导出 JPEG"
-            panel.nameFieldStringValue = (session.projectURL?.deletingPathExtension().lastPathComponent ?? "未命名") + ".jpg"
-            guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            try await ImageExporter.shared.write(data, to: url)
-        } catch { await showError("无法导出 JPEG", error: error) }
-    }
-
-    /// Photoshop-style Export As: the dialog's format picker decides the Save panel's file type and extension,
-    /// so the format the user last picked in the dialog is the one saved.
-    func exportAs() async {
-        guard let window, session.document != nil, begin() else { return }
-        defer { session.isProjectBusy = false }
-        guard let snapshot = session.projectSnapshot() else { return }
-        do {
-            let raster = try await ImageExporter.shared.render(snapshot)
-            let export: (Data, ExportFormat)? = await withCheckedContinuation { continuation in
-                let sheet = NSWindow()
-                sheet.styleMask = [.titled, .fullSizeContentView]
-                sheet.title = "导出为"
-                sheet.contentViewController = NSHostingController(rootView: ExportSheet(raster: raster, session: session) { export in
-                    window.endSheet(sheet)
-                    sheet.orderOut(nil)
-                    // Release the hosted view and its closure after dismissal.
-                    sheet.contentViewController = nil
-                    continuation.resume(returning: export)
-                })
-                window.beginSheet(sheet)
-            }
-            guard let (data, format) = export else { return }
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [format.utType]
-            panel.canCreateDirectories = true
-            panel.isExtensionHidden = false
-            panel.title = "导出为"
-            panel.nameFieldStringValue = (session.projectURL?.deletingPathExtension().lastPathComponent ?? "未命名") + "." + format.fileExtension
-            guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            try await ImageExporter.shared.write(data, to: url)
-        } catch { await showError("无法导出图像", error: error) }
-    }
 
     private func saveCurrent(asNew: Bool = false) async -> Bool {
         guard session.document != nil else { return true }
@@ -368,8 +341,7 @@ final class ProjectController {
         alert.informativeText = "如果不存储，所做的更改将会丢失"
         alert.addButton(withTitle: "存储")
         alert.addButton(withTitle: "取消")
-        let dontSaveButton = alert.addButton(withTitle: "Don’t Save") // Kept in English: CompositorTests/TypeToolTests.swift finds this button by title.
-        dontSaveButton.hasDestructiveAction = true
+        alert.addButton(withTitle: "Don’t Save") // Kept in English: CompositorTests/TypeToolTests.swift finds this button by title.
         let response = await show(alert)
         if response == .alertFirstButtonReturn { return await saveCurrent() }
         return response == .alertThirdButtonReturn
@@ -432,5 +404,32 @@ final class ProjectController {
             request.completion.resume()
         }
         processing = false
+    }
+}
+
+/// What File › Export As… writes.
+enum ExportFormat: String, CaseIterable {
+    case png = "PNG", jpeg = "JPEG", heic = "HEIC", webp = "WebP", tiff = "TIFF", gif = "GIF", bmp = "BMP", pdf = "PDF"
+    var type: UTType {
+        switch self {
+        case .png: .png
+        case .jpeg: .jpeg
+        case .heic: .heic
+        case .webp: .webP
+        case .tiff: .tiff
+        case .gif: .gif
+        case .bmp: .bmp
+        case .pdf: .pdf
+        }
+    }
+    /// Lossy formats get the dialog's quality slider.
+    var supportsQuality: Bool { [.jpeg, .heic, .webp].contains(self) }
+    /// The rest flatten transparency onto the background color, JPEG-fashion.
+    var supportsAlpha: Bool { [.png, .heic, .webp, .tiff, .pdf].contains(self) }
+    /// The formats this Mac can actually write, in picker order. PDF always is: it goes through CGPDFContext.
+    /// Probing replaces CGImageDestinationGetTypeIDs(), which the macOS 27 SDK removed from the headers; a
+    /// destination for an unsupported type fails to create.
+    static var available: [ExportFormat] {
+        allCases.filter { $0 == .pdf || CGImageDestinationCreateWithData(NSMutableData(), $0.type.identifier as CFString, 1, nil) != nil }
     }
 }

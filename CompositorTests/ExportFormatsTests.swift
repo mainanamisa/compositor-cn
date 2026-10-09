@@ -16,6 +16,22 @@ struct ExportFormatsTests {
         return ExportRaster(image: try #require(context.makeImage()))
     }
 
+    /// Encodes the raster the way the Export As dialog does for each format.
+    private func encode(_ raster: ExportRaster, format: ExportFormat,
+                        options: JPEGOptions = JPEGOptions()) async throws -> (data: Data, preview: CGImage) {
+        switch format {
+        case .png: return (try await ImageExporter.shared.pngData(raster), raster.image)
+        case .jpeg:
+            let result = try await ImageExporter.shared.jpeg(raster, options: options)
+            return (result.data, result.preview)
+        case .pdf:
+            return (try await ImageExporter.shared.pdfData(raster), raster.image)
+        default:
+            let result = try await ImageExporter.shared.encode(raster, format: format, options: options)
+            return (result.data, result.preview)
+        }
+    }
+
     @Test func coreFormatsAreAlwaysOffered() {
         #expect(ExportFormat.available.contains(.png))
         #expect(ExportFormat.available.contains(.jpeg))
@@ -24,12 +40,13 @@ struct ExportFormatsTests {
 
     @Test func everyAvailableFormatEncodesWithTheRightMagicBytes() async throws {
         let raster = try raster()
+        var options = JPEGOptions()
+        options.quality = 0.7
+        options.red = 1; options.green = 0; options.blue = 1
         for format in ExportFormat.available {
-            let result = try await ImageExporter.shared.encode(raster,
-                options: ExportOptions(format: format, quality: 0.7, red: 1, green: 0, blue: 1))
-            #expect(!result.data.isEmpty)
-            #expect(result.preview.width > 0 && result.preview.height > 0)
-            let data = result.data
+            let (data, preview) = try await encode(raster, format: format, options: options)
+            #expect(!data.isEmpty)
+            #expect(preview.width > 0 && preview.height > 0)
             switch format {
             case .png: #expect(Array(data.prefix(4)) == [0x89, 0x50, 0x4E, 0x47])
             case .jpeg: #expect(Array(data.prefix(2)) == [0xFF, 0xD8])
@@ -48,9 +65,10 @@ struct ExportFormatsTests {
     @Test func formatsWithoutAlphaFlattenOntoTheMatte() async throws {
         let raster = try raster()
         for format in ExportFormat.available where !format.supportsAlpha {
-            let result = try await ImageExporter.shared.encode(raster,
-                options: ExportOptions(format: format, red: 1, green: 0, blue: 1))
-            let bitmap = try #require(NSBitmapImageRep(data: result.data))
+            var options = JPEGOptions()
+            options.red = 1; options.green = 0; options.blue = 1
+            let (data, _) = try await encode(raster, format: format, options: options)
+            let bitmap = try #require(NSBitmapImageRep(data: data))
             // The transparent right half became the magenta matte.
             let pixel = try #require(bitmap.colorAt(x: 12, y: 8))
             #expect(pixel.alphaComponent == 1)
@@ -62,8 +80,8 @@ struct ExportFormatsTests {
         let raster = try raster()
         // PNG and TIFF decode losslessly; HEIC/WebP are covered by the magic-bytes test instead.
         for format in [ExportFormat.png, .tiff] where ExportFormat.available.contains(format) {
-            let result = try await ImageExporter.shared.encode(raster, options: ExportOptions(format: format))
-            let bitmap = try #require(NSBitmapImageRep(data: result.data))
+            let (data, _) = try await encode(raster, format: format)
+            let bitmap = try #require(NSBitmapImageRep(data: data))
             #expect(try #require(bitmap.colorAt(x: 12, y: 8)).alphaComponent == 0)
         }
     }

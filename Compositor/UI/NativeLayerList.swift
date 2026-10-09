@@ -52,9 +52,12 @@ struct NativeLayerList: NSViewRepresentable {
         private var oldCollapsed: Set<UUID> = []
         private var editingEnabled = false
         private var synchronizing = false
+        private var activeLayerID: UUID?
         init(session: EditorSession) { self.session = session }
 
         func update(_ table: NSTableView) {
+            let selectionChanged = activeLayerID != session.activeLayerID
+            activeLayerID = session.activeLayerID
             let entries = session.layerRows
             let byID = Dictionary(uniqueKeysWithValues: (session.document?.layers ?? []).map { ($0.id, $0) })
             let next = entries.compactMap { byID[$0.layer.id] }
@@ -62,7 +65,7 @@ struct NativeLayerList: NSViewRepresentable {
             rowDetails = Dictionary(uniqueKeysWithValues: entries.map { ($0.layer.id, $0) })
             let expansionChanged = oldCollapsed != session.collapsedGroupIDs
             oldCollapsed = session.collapsedGroupIDs
-            let enabled = session.canEditLayers
+            let enabled = session.layersLookEditable
             synchronizing = true
             defer { synchronizing = false }
             let old = rows
@@ -87,6 +90,10 @@ struct NativeLayerList: NSViewRepresentable {
             }
             let indices = IndexSet(next.indices.filter { session.selectedEffect == nil && session.selectedLayerIDs.contains(next[$0].id) })
             if table.selectedRowIndexes != indices { table.selectRowIndexes(indices, byExtendingSelection: false) }
+            // Reveal a newly selected layer, without undoing a manual scroll on later display updates.
+            if selectionChanged, let id = activeLayerID, let row = next.firstIndex(where: { $0.id == id }) {
+                table.scrollRowToVisible(row)
+            }
             // Border-only updates: selecting a target never rebuilds thumbnails or canvas pixels.
             let visible = table.rows(in: table.visibleRect)
             if visible.location != NSNotFound {

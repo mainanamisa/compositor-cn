@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct CompositorApp: App {
     @NSApplicationDelegateAdaptor(CompositorApplicationDelegate.self) private var applicationDelegate
+    @AppStorage("navigator.visible") private var showsNavigator = false
     private var session: EditorSession { applicationDelegate.session }
     var body: some Scene {
         Window("Compositor", id: "editor") {
@@ -79,11 +80,13 @@ struct CompositorApp: App {
                     Button("导出 PNG…") { Task { await applicationDelegate.projects.exportPNG() } }
                         .configuredKeyboardShortcut("e", modifiers: [.command, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
-                    Button("导出 JPEG…") { Task { await applicationDelegate.projects.exportJPEG() } }
+                    // Export As on JPEG.
+                    Button("导出 JPEG…") { Task { await applicationDelegate.projects.exportAs(start: .jpeg) } }
                         .configuredKeyboardShortcut("s", modifiers: [.command, .option, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                    // PNG, JPEG, HEIC, WebP, TIFF, GIF, BMP or PDF, sized and previewed; ⌥⇧⌘W, as Photoshop's Export As.
                     Button("导出为…") { Task { await applicationDelegate.projects.exportAs() } }
-                        .configuredKeyboardShortcut("e", modifiers: [.command, .option])
+                        .configuredKeyboardShortcut("w", modifiers: [.command, .option, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
                     Divider()
                     Button("关闭项目") {
@@ -106,7 +109,7 @@ struct CompositorApp: App {
                             .keyboardShortcut("f", modifiers: [])
                             .disabled(!session.canToggleCanvasOnly)
                         Divider()
-                        // With a dialog's preview open (Export JPEG), these zoom that preview rather than the canvas.
+                        // With a dialog's preview open (Export As), these zoom that preview rather than the canvas.
                         Button("适应窗口") {
                             if let preview = session.previewZoom { preview(.fit) } else { session.fit() }
                         }.configuredKeyboardShortcut("0").disabled(session.document == nil)
@@ -123,6 +126,7 @@ struct CompositorApp: App {
                             if let preview = session.previewZoom { preview(.zoomOut) } else { session.zoomKeyboard(by: -1) }
                         }
                             .configuredKeyboardShortcut("-").disabled(session.document == nil)
+                        Toggle("导航器（300% 及以上）", isOn: $showsNavigator)
                         Toggle("像素网格（800% 及以上）", isOn: Binding(get: { session.showsPixelGrid },
                                                                               set: { session.showsPixelGrid = $0 }))
                         Toggle("显示变换控件", isOn: Binding(get: { session.showsTransformControls },
@@ -386,6 +390,7 @@ extension FilterKind {
         case .vignette: return "暗角"
         case .bloomGlow: return "泛光/辉光"
         case .dither: return "抖动"
+        case .scanlines: return "扫描线"
         case .tonalContrast: return "色调对比度"
         case .lensCorrection: return "镜头校正"
         case .cameraRaw: return "Camera Raw 滤镜"
