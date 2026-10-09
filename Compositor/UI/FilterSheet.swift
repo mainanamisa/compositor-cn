@@ -103,6 +103,8 @@ struct FilterSheet: View {
                 Toggle("单色", isOn: flag(\.monochromatic))
             case .dither:
                 ditherControls
+            case .scanlines:
+                scanlinesControls
             case .vignette:
                 HStack(spacing: 8) {
                     Text("颜色").frame(width: 95, alignment: .leading)
@@ -197,16 +199,6 @@ struct FilterSheet: View {
             control("文字大小", \.dither.textSize, range: DitherSettings.textSizeRange, unit: "px", decimals: 0, logarithmic: false)
                 .help("每行字符的高度")
         }
-        if dither.style == .scanlines {
-            control("行距", \.dither.lineSpacing, range: DitherSettings.lineSpacingRange, unit: "px", decimals: 0, logarithmic: false)
-                .help("屏幕上各线条之间的间距")
-            control("辉光", \.dither.glow, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("线条周围的光晕，类似 CRT 的荧光粉")
-            control("点阵", \.dither.dots, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("把线条打散成发光的圆点")
-            control("摆动", \.dither.wobble, range: DitherSettings.wobbleRange, unit: "px", decimals: 0, logarithmic: false)
-                .help("让线条在屏幕上左右摆动，像 CRT 失去同步")
-        }
         if dither.style.isHalftone {
             control("单元大小", \.dither.cellSize, range: DitherSettings.cellSizeRange, unit: "px", decimals: 0, logarithmic: false)
         }
@@ -257,6 +249,46 @@ struct FilterSheet: View {
         if dither.style.drawsMarks {
             Toggle("暗底亮色", isOn: flag(\.dither.lightOnDark))
                 .help("在深色上绘制亮色调的纹样，像发光的屏幕")
+        }
+    }
+
+    @ViewBuilder private var scanlinesControls: some View {
+        let lines = settings.scanlines
+        control("行距", \.scanlines.lineSpacing, range: ScanlinesSettings.lineSpacingRange, unit: "px", decimals: 0, logarithmic: false)
+            .help("屏幕上各线条之间的间距")
+        control("粗细", \.scanlines.thickness, range: 5...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("亮部线条填满间隙的程度；暗部的线条画得更细")
+        control("辉光", \.scanlines.glow, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("线条周围的光晕，类似 CRT 的荧光粉")
+        control("点阵", \.scanlines.dots, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("比此值暗的区域把线条打成光点，亮部则融入实线")
+        control("位移", \.scanlines.displace, range: ScanlinesSettings.displaceRange, unit: "px", decimals: 0, logarithmic: false)
+            .help("亮部把线条抬高（负值则压低），让线条随画面起伏")
+        control("平滑度", \.scanlines.smoothness, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("位移前对亮度的平滑程度，从尖锐棱线到圆润山丘")
+        control("阈值", \.scanlines.threshold, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("比此值暗的区域不画线条，屏幕保持黑暗")
+        control("摆动", \.scanlines.wobble, range: ScanlinesSettings.wobbleRange, unit: "px", decimals: 0, logarithmic: false)
+            .help("让线条在屏幕上左右摆动，像 CRT 失去同步")
+        control("色彩分离", \.scanlines.split, range: ScanlinesSettings.splitRange, unit: "px", decimals: 0, logarithmic: false)
+            .help("把红色和蓝色通道错开，在线条上形成彩色镶边")
+        control("密度", \.scanlines.density, range: -100...100, unit: "", decimals: 0, logarithmic: false)
+            .help("画线前把画面调暗或调亮")
+        control("对比度", \.scanlines.contrast, range: -100...100, unit: "", decimals: 0, logarithmic: false)
+        control("黑场", \.scanlines.blackLevel, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("画面纯黑处线条的亮度，让黑色上也能看到线条")
+        Picker("颜色", selection: Binding(get: { lines.colors }, set: { new in update { $0.scanlines.colors = new } })) {
+            ForEach(DitherColors.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .fixedSize()
+        if lines.colors == .twoColors {
+            HStack(spacing: 8) {
+                Text("深色")
+                swatch(lines.dark, help: "选取屏幕的颜色") { session.openDitherColorPicker(light: false) }
+                Text("浅色").padding(.leading, 10)
+                swatch(lines.light, help: "选取线条的颜色") { session.openDitherColorPicker(light: true) }
+                Spacer()
+            }
         }
     }
 

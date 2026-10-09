@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     /// The Layers panel's width, remembered across launches.
     @AppStorage("layersPanelWidth") private var layersPanelWidth = 252.0
+    @AppStorage("navigator.visible") private var showsNavigator = false
     @Bindable var session: EditorSession
     var applicationDelegate: CompositorApplicationDelegate? = nil
     @Environment(\.openWindow) private var openWindow
@@ -105,6 +106,11 @@ struct ContentView: View {
                                 MaskAloneBadge(session: session, layer: layer).fixedSize()
                                     .padding(.bottom, 14)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            }
+                            if showsNavigator, !session.canvasOnly, session.viewport.zoom >= NavigatorMinimap.zoomShown {
+                                NavigatorMinimap(session: session)
+                                    .padding(12)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                             }
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("editor")) } action: { canvasFrame = $0 }

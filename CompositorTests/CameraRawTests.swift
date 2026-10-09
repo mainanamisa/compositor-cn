@@ -759,4 +759,32 @@ struct CameraRawTests {
         #expect(after.color < before.color * 0.25, "color speckle \(before.color) → \(after.color)")
         #expect(abs(after.brightness - before.brightness) < 1, "brightness \(before.brightness) → \(after.brightness)")
     }
+
+    /// Shadows and Highlights keep tones in order: a gray ramp from black to white still rises after either at ±100,
+    /// with black and white where they were. Shadows +100 once lifted black to middle gray, above the tones over it,
+    /// and lifted dark areas broke into blotches of color.
+    @Test func shadowsAndHighlightsKeepTonesInOrder() throws {
+        let ramp = try BrushRaster.context(width: 256, height: 1, mask: false)
+        for x in 0..<256 {
+            let level = CGFloat(x) / 255
+            ramp.setFillColor(CGColor(srgbRed: level, green: level, blue: level, alpha: 1))
+            ramp.fill(CGRect(x: x, y: 0, width: 1, height: 1))
+        }
+        let image = try #require(ramp.makeImage())
+        func levels(shadows: Double, highlights: Double) throws -> [Int] {
+            var settings = CameraRawSettings()
+            settings.shadows = shadows
+            settings.highlights = highlights
+            let row: [[Int]] = try pixels(settings.apply(image))
+            return row.map { $0[1] }
+        }
+        for (shadows, highlights) in [(100.0, 0.0), (-100.0, 0.0), (0.0, 100.0), (0.0, -100.0)] {
+            let out = try levels(shadows: shadows, highlights: highlights)
+            let rising = zip(out, out.dropFirst()).allSatisfy { pair in pair.1 >= pair.0 }
+            #expect(rising, "shadows \(shadows), highlights \(highlights): tones out of order")
+            #expect(out[0] <= 2 && out[255] >= 253, "black \(out[0]), white \(out[255])")
+        }
+        let lifted = try levels(shadows: 100, highlights: 0)
+        #expect(lifted[45] >= 45 + 20, "shadows +100 lifts the dark tones: 45 → \(lifted[45])")
+    }
 }

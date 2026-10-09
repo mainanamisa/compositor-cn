@@ -34,9 +34,9 @@ struct LayersPanel: View {
             HStack(spacing: 0) {
                 Button { session.addBlankLayer() } label: { FooterIcon(systemName: "plus.square") }
                     .help("新建空白图层（⇧⌘N）").accessibilityLabel("新建空白图层")
-                    .accessibilityIdentifier("addBlankLayer").disabled(!session.canEditLayers)
+                    .accessibilityIdentifier("addBlankLayer").disabled(!session.layersLookEditable)
                 Button { session.groupSelectedLayers() } label: { FooterIcon(systemName: "folder.badge.plus") }
-                    .help("将所选图层编组（⌘G）").accessibilityLabel("新建组").disabled(!session.canEditLayers)
+                    .help("将所选图层编组（⌘G）").accessibilityLabel("新建组").disabled(!session.layersLookEditable)
                 LayerMaskMenu(session: session)
                 Menu {
                     ForEach(LayerEffectKind.allCases, id: \.self) { kind in
@@ -45,19 +45,19 @@ struct LayersPanel: View {
                 } label: { Image(systemName: "sparkles").footerHitArea() }
                     .menuStyle(.borderlessButton).fixedSize()
                     .help("添加图层效果").accessibilityLabel("图层效果")
-                    .accessibilityIdentifier("layerEffects").disabled(!session.canEditEffects)
+                    .accessibilityIdentifier("layerEffects").disabled(!session.layersLookEditable || session.activeLayer?.isGroup != false || session.activeLayer?.asset == nil)
                 Menu {
                     ForEach(AdjustmentKind.allCases, id: \.self) { kind in
                         Button(kind.displayName) { session.addAdjustment(kind) }
                     }
                 } label: { Image(systemName: "circle.lefthalf.filled").footerHitArea() }
-                    .menuStyle(.borderlessButton).fixedSize().help("新建调整图层").disabled(!session.canEditLayers)
+                    .menuStyle(.borderlessButton).fixedSize().help("新建调整图层").disabled(!session.layersLookEditable)
                 Spacer()
                 Button { session.deleteLayerOrMask() } label: { FooterIcon(systemName: "trash") }
                     .help(session.selectedEffect != nil ? "删除所选效果" : session.isMaskSelected ? "删除图层蒙版" : session.selectedLayerIDs.count > 1 ? "删除选中的多个图层" : "删除所选图层")
                     .accessibilityLabel(session.selectedEffect != nil ? "删除所选效果" : session.isMaskSelected ? "删除图层蒙版" : session.selectedLayerIDs.count > 1 ? "删除选中的多个图层" : "删除所选图层")
                     .accessibilityIdentifier("deleteLayer")
-                    .disabled(!session.canEditLayers || session.activeLayer == nil)
+                    .disabled(!session.layersLookEditable || session.activeLayer == nil)
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .padding(.horizontal, 8).padding(.vertical, 4) // Plus the hit areas' 8 and 12: the original 16.
