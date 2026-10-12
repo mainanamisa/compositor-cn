@@ -87,6 +87,8 @@ struct FilterSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             case .gaussianBlur:
                 control("半径", \.radius, range: 0.1...250, unit: "px", decimals: 1, logarithmic: true)
+                Toggle("保留透明", isOn: flag(\.preserveTransparency))
+                    .help("只模糊颜色，保持图层的轮廓和透明区域不变")
             case .motionBlur:
                 control("角度", \.angle, range: -90...90, unit: "°", decimals: 0, logarithmic: false)
                 control("距离", \.distance, range: 1...2000, unit: "px", decimals: 0, logarithmic: true)

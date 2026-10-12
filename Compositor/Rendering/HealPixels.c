@@ -1,4 +1,5 @@
 #include "HealPixels.h"
+#include "PatchPixels.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,9 +50,7 @@ static double heal_score(const uint8_t *rgba, size_t stride, const uint8_t *role
     return n ? sum / n : INFINITY;
 }
 
-// Solves for smooth values over HOLE pixels, fixed to the RING values around them. A coarser
-// copy is solved first and used as the starting point, so large spots settle in few passes.
-static void heal_solve(float *value, const uint8_t *role, long w, long h, int depth) {
+void heal_membrane(float *value, const uint8_t *role, long w, long h, int depth) {
     int iterations = 300;
     if (w > 32 && h > 32 && depth < 16) {
         long cw = (w + 1) / 2, ch = (h + 1) / 2;
@@ -76,7 +75,7 @@ static void heal_solve(float *value, const uint8_t *role, long w, long h, int de
                     else if (hole) { coarseRole[q] = HOLE; for (int c = 0; c < 4; ++c) coarse[q * 4 + c] = holeSum[c] / hole; }
                 }
             }
-            heal_solve(coarse, coarseRole, cw, ch, depth + 1);
+            heal_membrane(coarse, coarseRole, cw, ch, depth + 1);
             for (long y = 0; y < h; ++y) {
                 for (long x = 0; x < w; ++x) {
                     long p = y * w + x, q = (y / 2) * cw + x / 2;
@@ -118,6 +117,36 @@ int spot_heal(uint8_t *rgba, const uint8_t *coverage, size_t width, size_t heigh
     long bounds[4];
     heal_coverage_bounds(coverage, width, height, width, bounds);
     if (bounds[2] <= bounds[0]) return 0;
+    // Content-Aware rebuilds the spot pixel by pixel from the image around it (PatchPixels.c), so an edge or a
+    // pattern carries on through it, then lays that in by coverage × opacity. With no image around to rebuild
+    // from, it falls back to a smooth fill.
+    if (mode == 0) {
+        uint8_t *filled = malloc(height * stride);
+        if (!filled) return -1;
+        memcpy(filled, rgba, height * stride);
+        int result = patch_fill(filled, stride, coverage, width, (int)width, (int)height, seed);
+        if (result < 0) { free(filled); return -1; }
+        if (result == 1) {
+            for (size_t y = (size_t)bounds[1]; y < (size_t)bounds[3]; ++y) {
+                for (size_t x = (size_t)bounds[0]; x < (size_t)bounds[2]; ++x) {
+                    double amount = coverage[y * width + x] / 255.0 * opacity;
+                    if (amount <= 0) continue;
+                    uint8_t *t = rgba + y * stride + x * 4;
+                    const uint8_t *f = filled + y * stride + x * 4;
+                    double alpha = t[3] + (f[3] - t[3]) * amount;
+                    t[3] = (uint8_t)lround(alpha);
+                    for (int c = 0; c < 3; ++c) {
+                        double v = t[c] + (f[c] - t[c]) * amount;
+                        t[c] = (uint8_t)lround(v < 0 ? 0 : v > t[3] ? t[3] : v);
+                    }
+                }
+            }
+            free(filled);
+            return 0;
+        }
+        free(filled);
+        mode = 1;
+    }
     long bw = bounds[2] - bounds[0], bh = bounds[3] - bounds[1], size = bw > bh ? bw : bh;
     long ring = size / 8;
     if (ring < 2) ring = 2;
@@ -219,7 +248,7 @@ int spot_heal(uint8_t *rgba, const uint8_t *coverage, size_t width, size_t heigh
     for (int c = 0; c < 4; ++c) mean[c] /= ringCount;
     for (long p = 0; p < wn; ++p)
         if (role[p] == HOLE) for (int c = 0; c < 4; ++c) value[p * 4 + c] = (float)mean[c];
-    heal_solve(value, role, ww, wh, 0);
+    heal_membrane(value, role, ww, wh, 0);
     for (int c = 0; c < 3; ++c) detail[c] = sqrt(detail[c] / ringCount) * 0.9;
 
     for (long y = 0; y < wh; ++y) {

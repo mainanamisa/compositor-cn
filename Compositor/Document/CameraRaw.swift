@@ -48,12 +48,6 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
     static let exposureRange: ClosedRange<Double> = -5...5
     static let toneRange: ClosedRange<Double> = -100...100
     static let unitRange: ClosedRange<Double> = 0...100
-    /// Share of a full warm/cool swing applied to red and blue. Kept here so the eyedropper inverts the same gains the kernel multiplies.
-    static let temperatureGain = 0.35
-    /// Magenta/green swing shared by red and blue.
-    static let tintRedBlue = 0.15
-    /// Magenta/green swing on green, opposite the other two channels.
-    static let tintGreen = 0.30
 
     var whiteBalance: CameraRawWhiteBalance = .custom
     /// Relative cool-to-warm, −100…100. Positive is warmer.
@@ -207,27 +201,23 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
     /// Camera Raw's 0…100 size, in the pixel scale `adjust_grain` already uses.
     var grainKernelSize: Double { 0.5 + (grainSize / 100) * 19.5 }
 
-    /// Channel multipliers for `temperature` and `tint`. Neutral is 1, 1, 1.
-    var gains: (red: Double, green: Double, blue: Double) {
-        let warm = temperature / 100
-        let magenta = tint / 100
-        return (1 + Self.temperatureGain * warm + Self.tintRedBlue * magenta,
-                1 - Self.tintGreen * magenta,
-                1 - Self.temperatureGain * warm + Self.tintRedBlue * magenta)
-    }
-
     /// `clipping` draws the Option-drag overlay instead of the grade. Nil renders the image.
     /// `scale` is preview pixels per layer pixel. Grain uses `seed` so the pattern stays put while the panel is open.
+    /// `brightness` is what the adaptive sliders read from the picture, when it's known already (a preview's source,
+    /// measured once for the session); nil measures it here.
     func apply(_ image: CGImage, clipping: CameraRawClipping? = nil, scale: CGFloat = 1, seed: UInt32 = 0, visualizePointColor: Int = -1,
-               sharpenMask: Bool = false) throws -> CGImage {
+               sharpenMask: Bool = false, brightness known: CameraRawTables.Brightness? = nil) throws -> CGImage {
         let settings = normalized
         if settings.isIdentity && clipping == nil && visualizePointColor < 0 && !sharpenMask { return image }
         guard settings.isValid else { throw ProjectError.invalid }
-        let gains = settings.gains
         let mode = clipping?.rawValue ?? 0
         let pixelScale = scale > 0 ? Double(scale) : 1
-        let paintColor = clipping == nil && !sharpenMask
-            && (settings.adjustsCurve || settings.adjustsMixer || settings.adjustsGrading || visualizePointColor >= 0)
+        // Curve, Color Mixer and Color Grading go into the one composed table with Light and Color, a single lookup a
+        // pixel, unless point colors or Refine Saturation (which the curve pass draws) are in play.
+        let foldsColor = clipping == nil && !sharpenMask && visualizePointColor < 0 && settings.mixer.points.isEmpty
+            && settings.curve.refineSaturation == 0
+        let colorAdjusts = settings.adjustsCurve || settings.adjustsMixer || settings.adjustsGrading
+        let paintColor = !foldsColor && clipping == nil && !sharpenMask && (colorAdjusts || visualizePointColor >= 0)
         let paintEffects = clipping == nil && !sharpenMask && settings.adjustsEffects
         let paintDetailOptics = clipping == nil && (settings.adjustsDetail || settings.adjustsOptics || sharpenMask)
         var source = image
@@ -235,13 +225,16 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
             source = try settings.geometry.apply(source)
         }
         return try ImageAdjustmentPixels.run(source) { pixels, width, height, stride in
+            let adaptive = settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0
+            let brightness = adaptive
+                ? known ?? CameraRawTables.brightness(pixels, width: width, height: height, stride: stride) : CameraRawTables.Brightness()
             if clipping == nil && !sharpenMask && settings.adjustsCalibration {
                 settings.applyCalibration(pixels: pixels, width: width, height: height, stride: stride)
             }
-            if settings.adjustsLight || settings.adjustsColor || clipping != nil {
-                adjust_camera_raw(pixels, width, height, stride, gains.red, gains.green, gains.blue,
-                                  settings.exposure, settings.contrast, settings.highlights, settings.shadows,
-                                  settings.whites, settings.blacks, settings.vibrance, settings.saturation, mode)
+            var table = CameraRawTables.compose(CameraRawTables.stages(for: settings, brightness: brightness))
+            if foldsColor && colorAdjusts { table = settings.foldingColor(into: table) }
+            if table != nil || clipping != nil {
+                adjust_camera_raw(pixels, width, height, stride, table, Int32(CameraRawTables.grid), mode)
             }
             if paintColor { settings.applyCurveColor(pixels, width: width, height: height, stride: stride, visualize: visualizePointColor) }
             if paintEffects {
@@ -266,32 +259,20 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
         }
     }
 
-    /// Temperature and tint that bring one linear-light pixel to neutral, using the same gains `apply` multiplies.
-    /// Nil when a channel is missing or the cast cannot be expressed as those two axes.
-    static func neutralize(linearRed red: Double, green: Double, blue: Double) -> (temperature: Double, tint: Double)? {
-        guard red > 1e-4, green > 1e-4, blue > 1e-4 else { return nil }
-        let a1 = Self.temperatureGain * red
-        let b1 = Self.tintRedBlue * red + Self.tintGreen * green
-        let c1 = green - red
-        let a2 = -Self.temperatureGain * blue
-        let b2 = Self.tintRedBlue * blue + Self.tintGreen * green
-        let c2 = green - blue
-        let determinant = a1 * b2 - a2 * b1
-        guard abs(determinant) > 1e-8 else { return nil }
-        let warm = (c1 * b2 - c2 * b1) / determinant
-        let magenta = (a1 * c2 - a2 * c1) / determinant
-        guard warm.isFinite, magenta.isFinite else { return nil }
-        return (warm * 100, magenta * 100)
-    }
-
+    /// Temperature and tint that turn one straight sRGB color (0…1) as nearly gray as Camera Raw's white balance can.
+    /// Nil when a channel is missing.
     static func neutralize(straightRed red: Double, green: Double, blue: Double) -> (temperature: Double, tint: Double)? {
-        neutralize(linearRed: decode(red), green: decode(green), blue: decode(blue))
+        CameraRawTables.neutralize(red: red, green: green, blue: blue)
     }
 
     /// Gray-world balance of the opaque pixels. Nil when the image has no coverage or no solution.
     static func autoBalance(of image: CGImage) -> (temperature: Double, tint: Double)? {
         guard let average = averageLinear(image) else { return nil }
-        return neutralize(linearRed: average.red, green: average.green, blue: average.blue)
+        return neutralize(straightRed: encode(average.red), green: encode(average.green), blue: encode(average.blue))
+    }
+
+    private static func encode(_ linear: Double) -> Double {
+        linear <= 0.0031308 ? linear * 12.92 : 1.055 * pow(linear, 1 / 2.4) - 0.055
     }
 
     private static func decode(_ encoded: Double) -> Double {
@@ -347,45 +328,27 @@ nonisolated struct CameraRawScope: Equatable, Sendable {
     }
 
     /// Counts the graded image. Fully transparent pixels are skipped.
+    /// The histogram and vectorscope from every other pixel each way, plenty for a scope drawn to its peak, read
+    /// straight from the image's bytes when they're already premultiplied RGBA.
     static func make(_ image: CGImage) -> Self? {
         guard image.width > 0, image.height > 0 else { return nil }
-        guard let context = try? BrushRaster.context(width: image.width, height: image.height, mask: false) else { return nil }
-        BrushRaster.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height), mask: false, context: context)
-        guard let data = context.data else { return nil }
-        let bytes = data.assumingMemoryBound(to: UInt8.self)
-        var bins = Array(repeating: 0.0, count: binCount * 4)
-        levels_histogram(bytes, nil, image.width * image.height, &bins)
+        var bins = Array(repeating: 0.0, count: binCount * 3)
         var scope = Array(repeating: 0.0, count: scopeSide * scopeSide)
-        let stride = context.bytesPerRow
-        for y in 0..<image.height {
-            let row = y * stride
-            for x in 0..<image.width {
-                let pixel = row + x * 4
-                let alpha = Double(bytes[pixel + 3])
-                if alpha == 0 { continue }
-                let red = min(1, Double(bytes[pixel]) / alpha)
-                let green = min(1, Double(bytes[pixel + 1]) / alpha)
-                let blue = min(1, Double(bytes[pixel + 2]) / alpha)
-                let maxChannel = max(red, green, blue)
-                let minChannel = min(red, green, blue)
-                let chroma = maxChannel - minChannel
-                guard chroma > 1e-4, maxChannel > 1e-4 else { continue }
-                var hue: Double
-                if maxChannel == red { hue = (green - blue) / chroma }
-                else if maxChannel == green { hue = 2 + (blue - red) / chroma }
-                else { hue = 4 + (red - green) / chroma }
-                hue = hue / 6
-                if hue < 0 { hue += 1 }
-                let angle = hue * 2 * Double.pi
-                let saturation = chroma / maxChannel
-                let plotX = 0.5 + cos(angle) * saturation * 0.48
-                let plotY = 0.5 + sin(angle) * saturation * 0.48
-                let column = min(scopeSide - 1, max(0, Int(plotX * Double(scopeSide))))
-                let rowIndex = min(scopeSide - 1, max(0, Int(plotY * Double(scopeSide))))
-                scope[rowIndex * scopeSide + column] += alpha / 255
-            }
+        func measure(_ bytes: UnsafePointer<UInt8>, _ stride: Int) {
+            camera_raw_scope(bytes, image.width, image.height, stride, 2, &bins, &scope, Int32(scopeSide))
         }
-        return Self(red: Array(bins[256..<512]), green: Array(bins[512..<768]), blue: Array(bins[768..<1024]), vectorscope: scope)
+        let info = CGBitmapInfo(rawValue: image.bitmapInfo.rawValue)
+        if image.bitsPerPixel == 32, image.bitsPerComponent == 8, image.alphaInfo == .premultipliedLast,
+           info.intersection(.byteOrderMask).rawValue == 0 || info.contains(.byteOrder32Big),
+           let data = image.dataProvider?.data, let bytes = CFDataGetBytePtr(data) {
+            measure(bytes, image.bytesPerRow)
+        } else {
+            guard let context = try? BrushRaster.context(width: image.width, height: image.height, mask: false),
+                  let data = context.data else { return nil }
+            BrushRaster.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height), mask: false, context: context)
+            measure(data.assumingMemoryBound(to: UInt8.self), context.bytesPerRow)
+        }
+        return Self(red: Array(bins[0..<256]), green: Array(bins[256..<512]), blue: Array(bins[512..<768]), vectorscope: scope)
     }
 
     /// Paints clipped shadows blue and clipped highlights red. The histogram is counted before this.

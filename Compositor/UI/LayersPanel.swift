@@ -4,7 +4,9 @@ struct LayersPanel: View {
     @Bindable var session: EditorSession
     /// Dragging the panel's left edge sets it, within `widths`.
     var width: CGFloat = 252
-    static let widths: ClosedRange<Double> = 202...352
+    /// No narrower than the footer: its icons can't shrink, and a footer wider than the panel pushed everything in
+    /// it out past both edges, over the edge that resizes it.
+    static let widths: ClosedRange<Double> = 222...352
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

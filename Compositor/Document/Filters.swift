@@ -43,7 +43,10 @@ nonisolated enum BackgroundQuality: String, CaseIterable, Sendable {
 /// Every filter's settings; each filter reads only its own.
 nonisolated struct FilterSettings: Equatable, Sendable {
     /// Gaussian Blur radius in layer pixels (the blur's standard deviation), 0.1–250.
-    var radius: Double = 1
+    var radius: Double = 5
+    /// Gaussian Blur keeps every pixel's transparency: only the colors blur, from the layer's own pixels, so its
+    /// outline stays where it is instead of softening and spreading.
+    var preserveTransparency = false
     /// Motion Blur direction in degrees, counterclockwise from horizontal as in Photoshop, −90–90.
     var angle: Double = 0
     /// Motion Blur streak length in layer pixels, 1–2000.
@@ -95,7 +98,7 @@ nonisolated struct FilterSettings: Equatable, Sendable {
             value.isFinite ? min(range.upperBound, max(range.lowerBound, value)) : fallback
         }
         var result = self
-        result.radius = clamp(radius, 0.1...250, 1)
+        result.radius = clamp(radius, 0.1...250, 5)
         result.angle = clamp(angle, -90...90, 0)
         result.distance = clamp(distance, 1...2000, 10)
         result.amount = clamp(amount, 0.1...400, 10)
@@ -126,6 +129,12 @@ nonisolated struct FilterSettings: Equatable, Sendable {
     }
 }
 
+/// Sides of a layer, in its own pixels (top is row 0).
+nonisolated struct LayerSides: OptionSet, Sendable {
+    let rawValue: Int
+    static let left = Self(rawValue: 1), right = Self(rawValue: 2), top = Self(rawValue: 4), bottom = Self(rawValue: 8)
+}
+
 nonisolated struct FilterJob: @unchecked Sendable {
     let kind: FilterKind
     let image: CGImage
@@ -139,6 +148,8 @@ nonisolated struct FilterJob: @unchecked Sendable {
     /// Vignette on an empty layer: the canvas, in the document, which it frames and fills. Otherwise the vignette
     /// frames the layer's own pixels and recolors only those.
     var canvas: CGRect? = nil
+    /// The image's sides at the canvas's edge, which Gaussian and Motion Blur carry on past instead of fading.
+    var canvasSides: LayerSides = []
     /// Canvas-space origin used by live adjustment layers so partial redraws keep one noise field.
     var noiseOrigin: CGPoint = .zero
     /// Camera Raw's Option-drag clipping view. Preview only; committing leaves this nil.
@@ -146,6 +157,8 @@ nonisolated struct FilterJob: @unchecked Sendable {
     /// Persistent histogram clipping indicators. Preview only; committing leaves these off.
     var showsShadowClipping = false
     var showsHighlightClipping = false
+    /// What Camera Raw's adaptive sliders read from `image`, when known already: measured once for a session's previews.
+    var cameraRawBrightness: CameraRawTables.Brightness? = nil
     /// Point-color range preview. −1 leaves the grade alone.
     var visualizesPointColor = -1
     /// Option-drag on Sharpening Masking. Preview only.
@@ -182,6 +195,21 @@ nonisolated enum PixelFilter {
     /// Remove Distortion at ±100 moves the image's corners by this share of their distance from the center.
     static let lensStrength = 0.35
 
+    /// The image with its edge pixels carried on past `sides`, as Photoshop's blurs do at the canvas's edge: there
+    /// is nothing clear beyond it to blur into, so a picture filling the canvas keeps solid edges. Past its other
+    /// sides it stays clear, and a blur spreads into that.
+    static func extending(_ image: CIImage, past sides: LayerSides, of extent: CGRect) -> CIImage {
+        guard !sides.isEmpty else { return image }
+        // Far enough for any blur; Core Image's y axis points up, so the layer's top is the extent's maxY.
+        let far: CGFloat = 100_000
+        var region = extent
+        if sides.contains(.left) { region.origin.x -= far; region.size.width += far }
+        if sides.contains(.right) { region.size.width += far }
+        if sides.contains(.bottom) { region.origin.y -= far; region.size.height += far }
+        if sides.contains(.top) { region.size.height += far }
+        return image.clampedToExtent().cropped(to: region)
+    }
+
     static func run(_ job: FilterJob) throws -> CGImage {
         let settings = job.settings.normalized
         let width = job.image.width, height = job.image.height
@@ -197,7 +225,8 @@ nonisolated enum PixelFilter {
         case .blackWhite: image = try settings.blackWhite.apply(job.image)
         case .colorBalance: image = try settings.colorBalance.apply(job.image)
         case .cameraRaw: image = try settings.cameraRaw.apply(job.image, clipping: job.cameraRawClipping, scale: job.scale, seed: job.seed,
-                                                                visualizePointColor: job.visualizesPointColor, sharpenMask: job.showsSharpenMask)
+                                                                visualizePointColor: job.visualizesPointColor, sharpenMask: job.showsSharpenMask,
+                                                                brightness: job.cameraRawBrightness)
         // Grain sits in layer pixels; the job's seed gives each application its own pattern.
         case .grain: image = try settings.grain.apply(job.image, unitsPerPixel: 1 / job.scale, seed: job.seed)
         case .dither: image = try settings.dither.apply(job.image)
@@ -207,11 +236,21 @@ nonisolated enum PixelFilter {
         case .contentAwareFill:
             image = try ContentFill.run(job)
         case .gaussianBlur:
-            let blurred = edges.applyingGaussianBlur(sigma: settings.radius * job.scale)
+            let source = settings.preserveTransparency ? edges : extending(edges, past: job.canvasSides, of: extent)
+            var blurred = source.applyingGaussianBlur(sigma: settings.radius * job.scale)
+            if settings.preserveTransparency {
+                // Each color from the layer's own pixels: dividing by the blurred alpha takes out the pull of the
+                // clear ones around them, which would otherwise darken and thin the colors near the outline. Then
+                // the original alpha, so the outline doesn't move.
+                blurred = blurred.unpremultiplyingAlpha().settingAlphaOne(in: extent)
+                    .applyingFilter("CIBlendWithAlphaMask", parameters: [
+                        kCIInputBackgroundImageKey: CIImage.empty(), kCIInputMaskImageKey: edges,
+                    ])
+            }
             image = try PixelAdjust.render(blurred.cropped(to: extent), width: width, height: height, isMask: false)
         case .motionBlur:
             // Core Image's y axis points up, so its counterclockwise angle matches Photoshop's.
-            let streaked = edges.applyingFilter("CIMotionBlur", parameters: [
+            let streaked = extending(edges, past: job.canvasSides, of: extent).applyingFilter("CIMotionBlur", parameters: [
                 kCIInputRadiusKey: settings.distance * job.scale * motionRadiusPerPixel,
                 kCIInputAngleKey: settings.angle * .pi / 180,
             ])
@@ -295,6 +334,9 @@ final class FilterEdit {
     var grownTransform: LayerTransform? = nil
     /// How far the padding reaches beyond the layer on every side, in layer pixels.
     var grownMargin: CGFloat = 0
+    /// The layer's sides at or past the canvas's edge, where Gaussian and Motion Blur carry its edge pixels on rather
+    /// than spreading into clear ones: they're given no padding.
+    private(set) var canvasSides: LayerSides = []
     var settings: FilterSettings
     var preview = true
     var committing = false
@@ -360,6 +402,15 @@ final class FilterEdit {
     @ObservationIgnored var pendingTransform: LayerTransform?
     /// Reject a render started before the blur's padded pixel grid changed.
     @ObservationIgnored var previewSourceVersion: UInt64 = 0
+    /// Camera Raw's adaptive sliders read the picture before any change, which stays the same while the panel is open:
+    /// measured once from the preview's source, again only when that changes.
+    @ObservationIgnored private var cameraRawBrightness: (version: UInt64, value: CameraRawTables.Brightness)?
+    var previewBrightness: CameraRawTables.Brightness {
+        if let cached = cameraRawBrightness, cached.version == previewSourceVersion { return cached.value }
+        let value = CameraRawTables.brightness(of: previewSource)
+        cameraRawBrightness = (previewSourceVersion, value)
+        return value
+    }
     /// The settings `preparedPreview` was made with, for the automatic filters that have settings of their own.
     @ObservationIgnored var preparedSettings: FilterSettings?
     @ObservationIgnored var pending: FilterJob?
@@ -369,7 +420,8 @@ final class FilterEdit {
 
     /// `growingTo`: a document area the layer's grid should cover (Content-Aware Fill's selection on the canvas).
     /// A blur grows the grid by its own reach instead, and again if its amount is raised.
-    init(kind: FilterKind, layer: ImageLayer, selection: SelectionClip?, settings: FilterSettings, growingTo area: CGRect? = nil) throws {
+    init(kind: FilterKind, layer: ImageLayer, selection: SelectionClip?, settings: FilterSettings, growingTo area: CGRect? = nil,
+         canvas: CGSize? = nil) throws {
         guard let asset = layer.asset else { throw ProjectError.invalid }
         self.kind = kind
         self.settings = settings.normalized
@@ -379,6 +431,15 @@ final class FilterEdit {
         previewSource = ready.previewSource
         previewScale = ready.previewScale
         previewMapping = ready.previewMapping
+        // A rotated layer's sides don't run along the canvas's, so it has none at its edge.
+        if let canvas, kind == .gaussianBlur || kind == .motionBlur, layer.transform.rotation == 0 {
+            let inPixels = CGRect(origin: .zero, size: canvas).applying(ready.mapping.inverted())
+            let width = CGFloat(asset.image.width), height = CGFloat(asset.image.height)
+            if inPixels.minX >= -0.5 { canvasSides.insert(.left) }
+            if inPixels.maxX <= width + 0.5 { canvasSides.insert(.right) }
+            if inPixels.minY >= -0.5 { canvasSides.insert(.top) }
+            if inPixels.maxY <= height + 0.5 { canvasSides.insert(.bottom) }
+        }
         if let area {
             let toPixels = BrushRaster.pixelToDocument(layer.transform, width: asset.image.width, height: asset.image.height).inverted()
             try grow(to: area.applying(toPixels).integral)
@@ -389,7 +450,7 @@ final class FilterEdit {
     /// The room a blur needs around the layer: about three standard deviations, or half a streak.
     static func blurMargin(_ kind: FilterKind, _ settings: FilterSettings) -> CGFloat {
         switch kind {
-        case .gaussianBlur: return CGFloat(settings.radius * 3 + 2)
+        case .gaussianBlur: return settings.preserveTransparency ? 0 : CGFloat(settings.radius * 3 + 2)
         case .motionBlur: return CGFloat(settings.distance / 2 + 2)
         case .bloomGlow: return CGFloat(settings.bloomRadius * 3 + 2)
         default: return 0
@@ -402,7 +463,15 @@ final class FilterEdit {
         let margin = Self.blurMargin(kind, settings)
         guard margin > grownMargin else { return }
         let bounds = CGRect(x: 0, y: 0, width: original.image.width, height: original.image.height)
-        try grow(to: bounds.insetBy(dx: -margin.rounded(.up), dy: -margin.rounded(.up)))
+        let room = margin.rounded(.up)
+        var target = bounds
+        if !canvasSides.contains(.left) { target.origin.x -= room; target.size.width += room }
+        if !canvasSides.contains(.right) { target.size.width += room }
+        if !canvasSides.contains(.top) { target.origin.y -= room; target.size.height += room }
+        if !canvasSides.contains(.bottom) { target.size.height += room }
+        try grow(to: target)
+        // Measured over the padded sides only, or a side left unpadded would have every change pad it again.
+        grownMargin = room
     }
 
     /// The layer's pixels drawn into a grid covering `extent` (layer pixels), with the transform that places it.
@@ -472,11 +541,13 @@ final class FilterEdit {
         var job = FilterJob(kind: kind, image: previewSource, settings: renderSettings(), scale: previewScale, selection: selection,
                             mapping: previewMapping, seed: seed)
         job.canvas = canvas
+        job.canvasSides = canvasSides
         job.cameraRawClipping = cameraRawClipping
         job.showsShadowClipping = showsShadowClipping
         job.showsHighlightClipping = showsHighlightClipping
         job.visualizesPointColor = pointColorVisualizeIndex
         job.showsSharpenMask = cameraRawSharpenMask
+        if kind == .cameraRaw { job.cameraRawBrightness = previewBrightness }
         return job
     }
 }
@@ -515,7 +586,8 @@ extension EditorSession {
             let area = kind == .contentAwareFill
                 ? selection.map { $0.path.boundingBoxOfPath.intersection(canvas) }.flatMap { $0.isNull || $0.isEmpty ? nil : $0 }
                 : fillsCanvas ? canvas : nil
-            let edit = try FilterEdit(kind: kind, layer: layer, selection: selection?.clip(canvas: document.size), settings: settings, growingTo: area)
+            let edit = try FilterEdit(kind: kind, layer: layer, selection: selection?.clip(canvas: document.size), settings: settings,
+                                      growingTo: area, canvas: document.size)
             if fillsCanvas { edit.canvas = canvas }
             edit.startedEmpty = startedEmpty
             edit.repeating = repeating
@@ -645,12 +717,19 @@ extension EditorSession {
         // Remove Background masks the background out rather than erasing it, so it can be brought back at any time
         // by painting the mask, disabling it, or deleting it.
         if edit.kind == .removeBackground { await commitBackgroundMask(edit); return }
-        var job = FilterJob(kind: edit.kind, image: edit.grownImage ?? edit.original.image, settings: edit.renderSettings(), scale: 1,
-                            selection: edit.selection, mapping: edit.mapping, seed: edit.seed)
+        // A blur that keeps the layer's transparency has no use for room around it (opening the panel may have made
+        // some for the blur it started with): it's applied to the layer as it was, which leaves its size alone.
+        let keepsOutline = edit.kind == .gaussianBlur && edit.settings.preserveTransparency
+        let mapping = keepsOutline
+            ? BrushRaster.pixelToDocument(edit.transform, width: edit.original.image.width, height: edit.original.image.height)
+            : edit.mapping
+        var job = FilterJob(kind: edit.kind, image: keepsOutline ? edit.original.image : edit.grownImage ?? edit.original.image,
+                            settings: edit.renderSettings(), scale: 1, selection: edit.selection, mapping: mapping, seed: edit.seed)
         job.canvas = edit.canvas
+        job.canvasSides = edit.canvasSides
         let cached = edit.kind.isAutomatic && edit.preparedSettings == edit.settings ? edit.preparedPreview : nil
         do {
-            let grown = edit.grownTransform
+            let grown = keepsOutline ? nil : edit.grownTransform
             let spreads = edit.kind == .gaussianBlur || edit.kind == .motionBlur || edit.kind == .bloomGlow
             let made = try await Task.detached(priority: .userInitiated) { () -> (asset: ImportedImage, transform: LayerTransform?) in
                 var image = try cached ?? PixelFilter.run(job)
@@ -669,7 +748,7 @@ extension EditorSession {
                   current.transform == edit.transform else { return }
             // A grown layer's mask (covering the old grid) is carried onto the new one, its edge tone past the old edge.
             var mask = current.mask
-            if let grown = edit.grownTransform, let owned = current.mask, owned.placement == nil,
+            if let grown, let owned = current.mask, owned.placement == nil,
                owned.asset.image.width > 1 || owned.asset.image.height > 1 {
                 var enabled = owned
                 enabled.isEnabled = true

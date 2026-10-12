@@ -43,6 +43,21 @@ struct RawDevelopSheet: View {
                 slider("色温", value: $settings.temperature, range: 2000...12000, unit: " K", precision: 0)
                 slider("色调", value: $settings.tint, range: -150...150, unit: "", precision: 0)
                 slider("增强", value: $settings.boost, range: 0...1, unit: "", precision: 2)
+                slider("降噪", value: $settings.noiseReduction, range: 0...1, unit: "", precision: 2)
+                    .disabled(!settings.supportsNoiseReduction)
+                    .help(settings.supportsNoiseReduction ? "平滑噪点，但会损失一些细节"
+                                                          : "此相机不支持")
+                HStack(spacing: 20) {
+                    Toggle("镜头校正", isOn: $settings.lensCorrection)
+                        .disabled(!settings.supportsLensCorrection)
+                        .help(settings.supportsLensCorrection ? "消除镜头的畸变和暗角"
+                                                              : "此文件没有镜头配置文件")
+                    Toggle("高光恢复", isOn: $settings.highlightRecovery)
+                        .disabled(!settings.supportsHighlightRecovery)
+                        .help(settings.supportsHighlightRecovery ? "找回相机部分过曝区域的亮部细节"
+                                                                 : "此相机不支持")
+                }
+                .padding(.leading, 120)
 
                 HStack {
                     Button("重置") { settings.reset() }.disabled(settings.isAsShot)
@@ -78,7 +93,7 @@ struct RawDevelopSheet: View {
     private func slider(_ title: String, value: Binding<Float>, range: ClosedRange<Float>,
                         unit: String, precision: Int) -> some View {
         HStack(spacing: 10) {
-            Text(title).frame(width: 90, alignment: .leading)
+            Text(title).frame(width: 110, alignment: .leading)
             Slider(value: value, in: range).frame(width: 300)
             Text(String(format: "%.\(precision)f%@", value.wrappedValue, unit))
                 .monospacedDigit().foregroundStyle(.secondary)

@@ -3,6 +3,10 @@ name: Verify
 on:
   push:
   pull_request:
+  # Weekly, and by hand from the Actions tab, every suite runs, the filter suites included.
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
@@ -15,12 +19,37 @@ jobs:
   unit:
     name: unit
     # Push covers same-repo branches. pull_request runs only for forks, so a PR is not tested twice.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: macos-26
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # History, to see what a push changed.
+          fetch-depth: 0
+
+      # The filter suites (Camera Raw, Hue/Saturation, Levels, the filters) run only when something they cover
+      # changed. The project file counts, so a version bump runs them all and every release is checked in full.
+      - name: Decide whether the filter suites run
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          filters=true
+          if [[ "$EVENT" == push || "$EVENT" == pull_request ]] && [[ -n "$BASE" && ! "$BASE" =~ ^0+$ ]] \
+             && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BASE" HEAD > changed.txt
+            pattern='^Compositor/Document/(CameraRaw|Filters|HueSaturation|ImageAdjustments|Levels|Curves|Scanlines|Dither|PixelAdjust|AdjustmentEditing|LayerAdjustment)'
+            pattern+='|^Compositor/Rendering/(AdjustPixels|LevelsPixels|DitherPixels|LensPixels|NoisePixels|GPUNoise|AdjustmentSurface)'
+            pattern+='|^Compositor/UI/(CameraRaw|Curves|FilterSheet|HueSaturation|Levels)'
+            pattern+='|^CompositorTests/(CameraRaw|HueSaturation|ImageAdjustment|Levels|Filter|Scanlines|FinishingFilter)'
+            pattern+='|^Compositor\.xcodeproj/|^\.github/workflows/verify\.yml|^scripts/ci-tests\.sh'
+            grep -qE "$pattern" changed.txt || filters=false
+          fi
+          echo "filters=$filters" >> "$GITHUB_OUTPUT"
+          echo "Filter suites: $filters"
 
       - name: Select Xcode 26.6
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
@@ -32,6 +61,8 @@ jobs:
           -scheme Compositor
           -onlyUsePackageVersionsFromResolvedFile
 
+      # Optimized, as in a release, still testable: unoptimized, pixel loops (the app's and the tests' own) take
+      # many times longer.
       - name: Build for testing
         id: build
         run: >
@@ -42,38 +73,76 @@ jobs:
           -configuration Debug
           -derivedDataPath DerivedData
           CODE_SIGN_IDENTITY=-
+          GCC_OPTIMIZATION_LEVEL=s
+          SWIFT_OPTIMIZATION_LEVEL=-O
 
-      # These two suites show real windows and time them, so they run alone after the rest.
-      - name: Run unit tests in parallel
-        run: >
-          xcodebuild test-without-building
-          -project Compositor.xcodeproj
-          -scheme Compositor
-          -destination 'platform=macOS,arch=arm64'
-          -derivedDataPath DerivedData
-          -resultBundlePath ParallelResults.xcresult
-          -parallel-testing-enabled YES
-          -skip-testing:CompositorTests/FloatingPanelTests
-          -skip-testing:CompositorTests/SliderSnapTests
-
-      - name: Run window tests serially
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: >
-          xcodebuild test-without-building
-          -project Compositor.xcodeproj
-          -scheme Compositor
-          -destination 'platform=macOS,arch=arm64'
-          -derivedDataPath DerivedData
-          -resultBundlePath SerialResults.xcresult
-          -parallel-testing-enabled NO
-          -only-testing:CompositorTests/FloatingPanelTests
-          -only-testing:CompositorTests/SliderSnapTests
+      - name: Run unit tests
+        env:
+          FILTERS: ${{ steps.scope.outputs.filters }}
+        run: scripts/ci-tests.sh DerivedData
 
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
-          path: '*.xcresult'
+          path: |
+            *.xcresult
+            *.log
           retention-days: 7
           if-no-files-found: ignore
+
+  # Screenshots of the main screens (CompositorUITests/ScreenshotTests), kept with the run to look at. Informational:
+  # a screen that couldn't be reached doesn't fail the run.
+  screenshots:
+    name: screenshots
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: macos-26
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      # UI tests drive the app with the mouse and keyboard, which macOS otherwise asks a person to allow.
+      - name: Allow UI automation
+        run: sudo automationmodetool enable-automationmode-without-authentication
+
+      - name: Take screenshots
+        run: >
+          xcodebuild test
+          -project Compositor.xcodeproj
+          -scheme Screenshots
+          -destination 'platform=macOS,arch=arm64'
+          -derivedDataPath DerivedData
+          -resultBundlePath Screenshots.xcresult
+          CODE_SIGN_IDENTITY=-
+          GCC_OPTIMIZATION_LEVEL=s
+          SWIFT_OPTIMIZATION_LEVEL=-O
+
+      - name: Collect screenshots
+        if: ${{ !cancelled() }}
+        run: |
+          xcrun xcresulttool export attachments --path Screenshots.xcresult --output-path exported
+          # Named as the test named them ("01 Start.png"), not by the IDs they're exported under.
+          mkdir -p screenshots
+          python3 - <<'PY'
+          import json, os, re, shutil
+          for test in json.load(open("exported/manifest.json")):
+              for item in test.get("attachments", []):
+                  name = re.sub(r"_\d+_[0-9A-Fa-f-]+(\.\w+)$", r"\1", item["suggestedHumanReadableName"])
+                  shutil.copy(os.path.join("exported", item["exportedFileName"]), os.path.join("screenshots", name))
+          PY
+          ls screenshots
+
+      - name: Upload screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-macos-26
+          path: screenshots
+          retention-days: 30
+          if-no-files-found: warn

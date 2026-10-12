@@ -16,7 +16,9 @@
 				<string>public.jpeg</string>
 				<string>public.png</string>
 				<string>public.heic</string>
+				<string>public.heif</string>
 				<string>public.tiff</string>
+				<string>org.webmproject.webp</string>
 				<string>com.adobe.photoshop-image</string>
 				<string>com.adobe.photoshop-large-image</string>
 				<string>public.camera-raw-image</string>
@@ -37,6 +39,18 @@
 			</array>
 			<key>LSTypeIsPackage</key>
 			<true/>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folders</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
 		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>

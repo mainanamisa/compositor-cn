@@ -16,18 +16,36 @@ nonisolated struct RawDevelopSettings: Equatable, Sendable {
     var tint: Float = 0
     /// Apple's tone curve: 1 is its full interpretation, 0 leaves the image flat and neutral.
     var boost: Float = 1
+    /// Luminance noise reduction, 0–1, starting where the system's RAW engine starts for this camera.
+    var noiseReduction: Float = 0
+    /// The lens's distortion and vignetting taken out, from the profile in the file, where it has one.
+    var lensCorrection = false
+    /// Detail brought back in highlights the camera only partly clipped (one or two channels blown).
+    var highlightRecovery = false
     /// What the camera itself chose, so Reset has somewhere to go back to.
     var asShotTemperature: Float = 5000
     var asShotTint: Float = 0
+    var asShotNoiseReduction: Float = 0
+    var asShotLensCorrection = false
+    var asShotHighlightRecovery = false
+    /// Which of those this file's camera allows; the others stay as they are.
+    var supportsNoiseReduction = false
+    var supportsLensCorrection = false
+    var supportsHighlightRecovery = false
 
     var isAsShot: Bool {
         exposure == 0 && boost == 1 && temperature == asShotTemperature && tint == asShotTint
+            && noiseReduction == asShotNoiseReduction && lensCorrection == asShotLensCorrection
+            && highlightRecovery == asShotHighlightRecovery
     }
     mutating func reset() {
         exposure = 0
         boost = 1
         temperature = asShotTemperature
         tint = asShotTint
+        noiseReduction = asShotNoiseReduction
+        lensCorrection = asShotLensCorrection
+        highlightRecovery = asShotHighlightRecovery
     }
 }
 
@@ -80,21 +98,29 @@ nonisolated enum RawImporter {
         return type.conforms(to: .rawImage)
     }
 
-    /// The camera's own white balance, which is where the sliders start.
+    /// The camera's own white balance and the engine's own starting points for this camera, which is where the
+    /// controls start.
     static func asShot(_ url: URL) -> RawDevelopSettings? {
         guard let filter = CIRAWFilter(imageURL: url) else { return nil }
-        return RawDevelopSettings(temperature: filter.neutralTemperature, tint: filter.neutralTint,
-                                  asShotTemperature: filter.neutralTemperature, asShotTint: filter.neutralTint)
+        var settings = RawDevelopSettings(temperature: filter.neutralTemperature, tint: filter.neutralTint)
+        settings.noiseReduction = filter.isLuminanceNoiseReductionSupported ? filter.luminanceNoiseReductionAmount : 0
+        settings.lensCorrection = filter.isLensCorrectionSupported && filter.isLensCorrectionEnabled
+        settings.highlightRecovery = filter.isHighlightRecoverySupported && filter.isHighlightRecoveryEnabled
+        settings.asShotTemperature = settings.temperature
+        settings.asShotTint = settings.tint
+        settings.asShotNoiseReduction = settings.noiseReduction
+        settings.asShotLensCorrection = settings.lensCorrection
+        settings.asShotHighlightRecovery = settings.highlightRecovery
+        settings.supportsNoiseReduction = filter.isLuminanceNoiseReductionSupported
+        settings.supportsLensCorrection = filter.isLensCorrectionSupported
+        settings.supportsHighlightRecovery = filter.isHighlightRecoverySupported
+        return settings
     }
 
     /// The developed image. `limit` caps the long edge for the preview the sheet shows while the
     /// sliders move; the import itself passes nil and gets the full frame.
     static func develop(_ url: URL, settings: RawDevelopSettings, limit: CGFloat? = nil) throws -> CGImage {
         guard let filter = CIRAWFilter(imageURL: url) else { throw ImageImportError.unreadable }
-        filter.exposure = settings.exposure
-        filter.neutralTemperature = settings.temperature
-        filter.neutralTint = settings.tint
-        filter.boostAmount = settings.boost
         if let limit {
             let size = filter.nativeSize
             let longest = max(size.width, size.height)
@@ -113,6 +139,9 @@ nonisolated enum RawImporter {
         filter.neutralTemperature = settings.temperature
         filter.neutralTint = settings.tint
         filter.boostAmount = settings.boost
+        if settings.supportsNoiseReduction { filter.luminanceNoiseReductionAmount = settings.noiseReduction }
+        if settings.supportsLensCorrection { filter.isLensCorrectionEnabled = settings.lensCorrection }
+        if settings.supportsHighlightRecovery { filter.isHighlightRecoveryEnabled = settings.highlightRecovery }
         guard let output = filter.outputImage else { return nil }
         return dithered(output, context: context)
     }

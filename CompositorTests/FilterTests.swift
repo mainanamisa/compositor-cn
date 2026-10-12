@@ -6,13 +6,15 @@ import Testing
 struct FilterTests {
     @Test func gaussianBlurSoftensAHardEdgeAndSpreadsPastTheLayerEdgeAsOneUndoStep() async throws {
         let session = EditorSession()
-        session.createDocument(width: 40, height: 20)
+        // Room on every side of the layer: at the canvas's edge a blur carries the layer on instead (see below).
+        session.createDocument(width: 80, height: 60)
         // Left half opaque white, right half transparent.
         let context = try BrushRaster.context(width: 40, height: 20, mask: false)
         context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
         let image = try #require(context.makeImage())
         session.insert(ImportedImage(image: image, thumbnail: image, name: "Half"))
+        let before = try #require(session.activeLayer?.transform.origin)
         session.beginFilter(.gaussianBlur)
         #expect(session.filterEdit != nil && !session.canEditLayers)
         session.updateFilter(FilterSettings(radius: 3), preview: true)
@@ -28,11 +30,11 @@ struct FilterTests {
         let bytes = try #require(pixels.data).assumingMemoryBound(to: UInt8.self)
         // The blur is not clamped at the layer's edge: the layer is given room, the blur spreads into it and
         // whatever stays empty is cut away again (Filters.swift, `growForBlur` / `PixelFilter.trimmed`). The
-        // 40 x 20 layer, opaque across its full height for its left half, comes out 36 x 36 at (-8, -8). This
+        // 40 x 20 layer, opaque across its full height for its left half, comes out 36 x 36, 8 px up and left. This
         // used to read three fixed columns of a 40-wide result and assert that the border did not fade, from
         // when the blur smeared outwards and stopped at the edge; the test's name said so too.
         let origin = try #require(session.activeLayer?.transform.origin)
-        #expect(origin.x < 0 && origin.y < 0, "the layer grew on every side: origin \(origin)")
+        #expect(origin.x < before.x && origin.y < before.y, "the layer grew on every side: origin \(origin)")
         // The strongest evidence that the blur left the layer: it was 20 tall and opaque top to bottom, so it
         // could not have grown vertically unless the blur went past the edge and the layer was given room.
         #expect(result.height > 20, "the blur spread past the layer's edge: height \(result.height)")
@@ -45,12 +47,129 @@ struct FilterTests {
         #expect(try #require(middle.last) < 20, "and it fades out on the far side")
     }
 
+    /// Preserve Transparency blurs only the colors: the layer keeps its size and every pixel its alpha, and the colors
+    /// next to the clear part are the layer's own, not darkened by the clear pixels beside them.
+    @Test func gaussianBlurCanPreserveTransparency() async throws {
+        let session = EditorSession()
+        session.createDocument(width: 40, height: 20)
+        // Red, then green, across the left half; the right half clear.
+        let context = try BrushRaster.context(width: 40, height: 20, mask: false)
+        context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 10, height: 20))
+        context.setFillColor(CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 10, y: 0, width: 10, height: 20))
+        let image = try #require(context.makeImage())
+        session.insert(ImportedImage(image: image, thumbnail: image, name: "Halves"))
+        let transform = try #require(session.activeLayer?.transform)
+        session.beginFilter(.gaussianBlur)
+        var settings = FilterSettings(radius: 3)
+        settings.preserveTransparency = true
+        session.updateFilter(settings, preview: true)
+        await session.commitFilter()
+        #expect(session.activeLayer?.transform == transform, "the layer didn't grow or move")
+        let result = try #require(session.activeLayer?.asset?.image)
+        #expect(result.width == 40 && result.height == 20)
+        let pixels = try #require(CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 160,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+        pixels.draw(result, in: CGRect(x: 0, y: 0, width: 40, height: 20))
+        let bytes = try #require(pixels.data).assumingMemoryBound(to: UInt8.self)
+        func pixel(_ x: Int, _ y: Int) -> [Int] { (0..<4).map { Int(bytes[(y * 40 + x) * 4 + $0]) } }
+        let alphas = (0..<20).flatMap { y in (0..<40).map { x in pixel(x, y)[3] } }
+        #expect(alphas == (0..<20).flatMap { _ in (0..<40).map { $0 < 20 ? 255 : 0 } }, "every pixel kept its alpha")
+        let edge = pixel(19, 10)
+        #expect(edge[1] >= 250 && edge[0] <= 5, "green to the very edge, not darkened: \(edge)")
+        let seam = pixel(9, 10)
+        #expect(seam[0] > 60 && seam[1] > 60, "red and green blur into each other: \(seam)")
+    }
+
+    /// Through a selection, the preserved blur lands where the selection is: the layer isn't padded for it, so the
+    /// selection is read against the layer as it is.
+    @Test func preservedBlurStaysInsideTheSelection() async throws {
+        let session = EditorSession()
+        session.createDocument(width: 40, height: 20)
+        let context = try BrushRaster.context(width: 40, height: 20, mask: false)
+        context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 10, height: 20))
+        context.setFillColor(CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 10, y: 0, width: 10, height: 20))
+        let image = try #require(context.makeImage())
+        session.insert(ImportedImage(image: image, thumbnail: image, name: "Halves"))
+        // The green block only.
+        session.setSelection(DocumentSelection(path: CGPath(rect: CGRect(x: 10, y: 0, width: 10, height: 20), transform: nil),
+                                               antialiased: false, feather: 0), name: "Green")
+        session.beginFilter(.gaussianBlur)
+        var settings = FilterSettings(radius: 3)
+        settings.preserveTransparency = true
+        session.updateFilter(settings, preview: true)
+        await session.commitFilter()
+        let result = try #require(session.activeLayer?.asset?.image)
+        let pixels = try #require(CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 160,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+        pixels.draw(result, in: CGRect(x: 0, y: 0, width: 40, height: 20))
+        let bytes = try #require(pixels.data).assumingMemoryBound(to: UInt8.self)
+        func pixel(_ x: Int) -> [Int] { (0..<4).map { Int(bytes[(10 * 40 + x) * 4 + $0]) } }
+        #expect(pixel(9)[0] >= 250 && pixel(9)[1] <= 5, "the red outside the selection is untouched: \(pixel(9))")
+        #expect(pixel(10)[0] > 30, "the green just inside it picks up the red beside it: \(pixel(10))")
+    }
+
+    /// At the canvas's edge a blur carries the layer's edge pixels on, as Photoshop's does: a picture filling the canvas
+    /// keeps solid edges and its size, and only what's inside it blurs.
+    @Test func blurKeepsAPictureFillingTheCanvasSolidAtItsEdges() async throws {
+        let session = EditorSession()
+        session.createDocument(width: 40, height: 20)
+        let context = try BrushRaster.context(width: 40, height: 20, mask: false)
+        context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+        context.setFillColor(CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 20, y: 0, width: 20, height: 20))
+        let image = try #require(context.makeImage())
+        session.insert(ImportedImage(image: image, thumbnail: image, name: "Picture"))
+        let transform = try #require(session.activeLayer?.transform)
+        for kind in [FilterKind.gaussianBlur, .motionBlur] {
+            session.beginFilter(kind)
+            session.updateFilter(FilterSettings(radius: 4, distance: 30), preview: true)
+            await session.commitFilter()
+            #expect(session.activeLayer?.transform == transform, "\(kind.rawValue): the layer kept its place and size")
+            let result = try #require(session.activeLayer?.asset?.image)
+            let pixels = try #require(CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 160,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+            pixels.draw(result, in: CGRect(x: 0, y: 0, width: 40, height: 20))
+            let bytes = try #require(pixels.data).assumingMemoryBound(to: UInt8.self)
+            let alphas = (0..<800).map { bytes[$0 * 4 + 3] }
+            #expect(alphas.allSatisfy { $0 == 255 }, "\(kind.rawValue): solid to every edge, lowest \(alphas.min() ?? 0)")
+            let seam = (0..<4).map { Int(bytes[(10 * 40 + 20) * 4 + $0]) }
+            #expect(seam[0] > 40 && seam[1] > 40, "\(kind.rawValue): red and green blur into each other: \(seam)")
+        }
+    }
+
+    /// A layer touching the canvas's edge on one side only: carried on there, spread past its other sides.
+    @Test func blurSpreadsOnlyWhereTheLayerIsInsideTheCanvas() async throws {
+        let session = EditorSession()
+        session.createDocument(width: 80, height: 20)
+        let context = try BrushRaster.context(width: 40, height: 20, mask: false)
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+        let image = try #require(context.makeImage())
+        // Against the canvas's left edge, its top and bottom too; clear canvas to its right.
+        session.insert(ImportedImage(image: image, thumbnail: image, name: "Block"), centeredAt: CGPoint(x: 20, y: 10))
+        #expect(session.activeLayer?.transform.origin == .zero)
+        session.beginFilter(.gaussianBlur)
+        session.updateFilter(FilterSettings(radius: 3), preview: true)
+        await session.commitFilter()
+        let transform = try #require(session.activeLayer?.transform)
+        #expect(transform.origin == .zero, "nothing added past the left, top or bottom: \(transform)")
+        #expect(transform.size.height == 20 && transform.size.width > 40, "it spread to the right: \(transform.size)")
+    }
+
     /// Dragging a blur bigger grows the layer to make room for it. The last preview stays on the canvas, in the place it
     /// was made for, until the preview from the grown layer replaces it — it used to be dropped, and the unblurred layer
     /// flashed up in between.
     @Test func growingABlurKeepsThePreviewUpUntilTheNextOne() async throws {
         let session = EditorSession()
-        session.createDocument(width: 40, height: 20)
+        session.createDocument(width: 80, height: 60)
         let context = try BrushRaster.context(width: 40, height: 20, mask: false)
         context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))

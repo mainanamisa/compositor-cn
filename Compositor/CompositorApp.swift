@@ -97,6 +97,7 @@ struct CompositorApp: App {
                 }
                 // Grouped: a commands builder takes at most ten items.
                 Group {
+
                     CommandGroup(after: .toolbar) {
                         Button("命令面板…") {
                             CommandPaletteController.shared.toggle(session: session, over: applicationDelegate.projects.window)
