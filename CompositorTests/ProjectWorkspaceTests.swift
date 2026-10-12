@@ -70,22 +70,22 @@ import Testing
     }
 
     /// The only tab, still blank, doesn't close: it would only be replaced. New tabs take the lowest free Untitled
-    /// number, so closing the last project gives "Untitled" again rather than counting up (issue #231).
+    /// number, so closing the last project gives "未命名" again rather than counting up (issue #231).
     @Test func untitledNumbersStayLowAndTheBlankTabStays() async {
         let workspace = ProjectWorkspace()
         let first = workspace.current
-        #expect(first.title == "Untitled" && !workspace.canClose(first))
+        #expect(first.title == "未命名" && !workspace.canClose(first))
         await workspace.close(first.id)
-        #expect(workspace.tabs.count == 1 && workspace.current === first && first.title == "Untitled")
+        #expect(workspace.tabs.count == 1 && workspace.current === first && first.title == "未命名")
 
         first.session.createDocument(width: 10, height: 10)
         #expect(workspace.canClose(first))
         let second = workspace.addTab(), third = workspace.addTab()
-        #expect(second.title == "Untitled 2" && third.title == "Untitled 3")
+        #expect(second.title == "未命名 2" && third.title == "未命名 3")
         workspace.removeTab(second.id)
-        #expect(workspace.addTab().title == "Untitled 2", "the lowest free number")
+        #expect(workspace.addTab().title == "未命名 2", "the lowest free number")
         for tab in workspace.tabs { workspace.removeTab(tab.id) }
-        #expect(workspace.tabs.count == 1 && workspace.current.title == "Untitled", "the last tab closed leaves Untitled")
+        #expect(workspace.tabs.count == 1 && workspace.current.title == "未命名", "the last tab closed leaves Untitled")
     }
 
     @Test func tabsKeepIndependentDocumentsAndUndo() throws {

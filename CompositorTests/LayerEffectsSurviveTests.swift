@@ -66,7 +66,7 @@ struct LayerEffectsSurviveTests {
         let before = extras(session, ids)
         let resized = try await CanvasResizer.shared.resize(try #require(session.projectSnapshot()),
             to: CanvasSizeOptions(width: 260, height: 160, anchor: 4))
-        session.applyDocumentSize(resized, actionName: "Canvas Size")
+        session.applyDocumentSize(resized, actionName: "画布大小")
         #expect(session.document?.width == 260)
         #expect(extras(session, ids) == before)
     }
@@ -119,7 +119,7 @@ struct LayerEffectsSurviveTests {
         session.updateHueSaturation(settings, preview: true)
         await session.hueSaturationTask?.value
         await session.commitHueSaturation()
-        #expect(session.history.undoName == "Hue/Saturation")
+        #expect(session.history.undoName == "色相/饱和度")
         #expect(session.activeLayer?.effects == effects)
     }
 
@@ -130,14 +130,14 @@ struct LayerEffectsSurviveTests {
         session.beginLevels()
         session.updateLevels(settings, preview: true)
         await session.commitLevels()
-        #expect(session.history.undoName == "Levels")
+        #expect(session.history.undoName == "色阶")
         #expect(session.activeLayer?.effects == effects)
     }
 
     @Test func invertKeepsEffects() async throws {
         let session = try pixelLayer()
         await session.invertPixels()
-        #expect(session.history.undoName == "Invert")
+        #expect(session.history.undoName == "反相")
         #expect(session.activeLayer?.effects == effects)
     }
 
@@ -150,7 +150,7 @@ struct LayerEffectsSurviveTests {
         draft.origin.x += 8
         session.previewTransform(draft)
         session.commitTransform()
-        #expect(session.history.undoName == "Transform Selection")
+        #expect(session.history.undoName == "变换选区")
         #expect(session.document?.layers.first { $0.id == source }?.effects == effects)
     }
 }
