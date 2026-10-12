@@ -245,11 +245,10 @@ nonisolated extension CameraRawSettings {
     func applyCalibration(pixels: UnsafeMutablePointer<UInt8>, width: Int, height: Int, stride: Int) {
         let calibration = calibration.normalized
         guard calibration.adjusts else { return }
-        adjust_camera_raw_calibration(pixels, width, height, stride,
-                                      calibration.shadowTint,
-                                      calibration.redHue, calibration.redSaturation,
-                                      calibration.greenHue, calibration.greenSaturation,
-                                      calibration.blueHue, calibration.blueSaturation,
+        // The primaries' hue and saturation come from Photoshop's measured tables, with Light and Color; this draws
+        // Shadows Tint alone.
+        guard calibration.shadowTint != 0 else { return }
+        adjust_camera_raw_calibration(pixels, width, height, stride, calibration.shadowTint, 0, 0, 0, 0, 0, 0,
                                       calibration.process.kernelValue)
     }
 }

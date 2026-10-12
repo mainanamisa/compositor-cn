@@ -31,7 +31,7 @@ struct GradientControls: View {
                     .unitSuffix("%")
                 }
             }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.never)
             Spacer(minLength: 0)
             if session.isMaskSelected { Text("蒙版").foregroundStyle(.secondary) }
             if session.gradientEdit != nil {

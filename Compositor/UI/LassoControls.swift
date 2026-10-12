@@ -75,7 +75,7 @@ struct LassoControls: View {
                 }
             }
             }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.never)
             Spacer(minLength: 0)
             if let selection = session.selection {
                 if selection.isEmpty { Text("空选区").foregroundStyle(.secondary) }

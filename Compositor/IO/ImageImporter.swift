@@ -12,12 +12,34 @@ nonisolated struct ImportedImage: @unchecked Sendable {
     var raster: RasterSnapshot? = nil
 }
 
+/// A folder brought in as images: the ones directly inside it, not its subfolders'.
+nonisolated enum ImageFolder {
+    /// A plain folder: not a file, and not a package such as a Compositor project.
+    static func matches(_ url: URL) -> Bool {
+        guard url.isFileURL, url.pathExtension.lowercased() != "comp",
+              let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]) else { return false }
+        return values.isDirectory == true && values.isPackage != true
+    }
+
+    /// The importable images directly inside `folder`, in the Finder's name order ("2" before "10").
+    static func images(in folder: URL) -> [URL] {
+        let contents = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey],
+                                                                      options: [.skipsHiddenFiles])) ?? []
+        return contents.filter { url in
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true,
+                  let type = UTType(filenameExtension: url.pathExtension) else { return false }
+            return UTType.importableImages.contains { type.conforms(to: $0) }
+        }
+        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+}
+
 nonisolated enum ImageImportError: LocalizedError {
     case unreadable, unsupported, tooLarge
     var errorDescription: String? {
         switch self {
         case .unreadable: "无法读取该图像，它可能已损坏或不可用"
-        case .unsupported: "请选择 JPEG、PNG、HEIC、TIFF 或 Photoshop（PSD）文件"
+        case .unsupported: "请选择 JPEG、PNG、HEIC、HEIF、TIFF、WebP 或 Photoshop（PSD）文件"
         case .tooLarge: "此导入超出当前 \(DocumentLimits.documentBudgetMegapixels) 百万像素的文档预算或 \(DocumentLimits.maxSide.formatted()) 像素的边长限制"
         }
     }
@@ -57,7 +79,7 @@ actor ImageImporter {
                   let identifier = CGImageSourceGetType(source) as String?,
                   let type = UTType(identifier) else { throw ImageImportError.unreadable }
             let photoshop = flattenedPhotoshop ? [UTType.photoshopImage, .photoshopLargeImage] : []
-            guard ([UTType.jpeg, .png, .heic, .tiff] + photoshop).contains(where: { type.conforms(to: $0) }) else {
+            guard ([UTType.jpeg, .png, .heic, .heif, .tiff, .webP] + photoshop).contains(where: { type.conforms(to: $0) }) else {
                 throw ImageImportError.unsupported
             }
             guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],

@@ -64,7 +64,9 @@ struct ProjectTabStrip: View {
     @State private var slotWidth: CGFloat = 0
 
     private func widths() -> [UUID: CGFloat] {
-        Dictionary(uniqueKeysWithValues: workspace.tabs.map { ($0.id, projectTabPillWidth($0, active: workspace.selectedID == $0.id)) })
+        Dictionary(uniqueKeysWithValues: workspace.tabs.map {
+            ($0.id, projectTabPillWidth($0, active: workspace.selectedID == $0.id, closable: workspace.canClose($0)))
+        })
     }
     private func overflow(availableWidth: CGFloat) -> ProjectTabOverflow {
         projectTabOverflow(order: workspace.tabs.map(\.id), widths: widths(), selectedID: workspace.selectedID,
@@ -212,9 +214,9 @@ private func projectTabLabelWidth(_ tab: ProjectTab, active: Bool) -> CGFloat {
     return min(155, max(35, ceil(titleWidth) + dotWidth))
 }
 
-private func projectTabPillWidth(_ tab: ProjectTab, active: Bool) -> CGFloat {
-    // 11 px leading, 8 px trailing, 16 px close button, 5 px after close.
-    projectTabLabelWidth(tab, active: active) + 40
+private func projectTabPillWidth(_ tab: ProjectTab, active: Bool, closable: Bool) -> CGFloat {
+    // 11 px leading, 8 px trailing, 16 px close button, 5 px after close; with no close button, 11 px each side.
+    projectTabLabelWidth(tab, active: active) + (closable ? 40 : 22)
 }
 
 /// Sized the same way the tab pills are: text measured at the same weight, plus the chevron and padding.
@@ -341,7 +343,7 @@ private struct ProjectTabButton: View {
                     Text(tab.title).font(.system(size: 12, weight: active ? .semibold : .medium)).lineLimit(1)
                 }
                 .frame(width: projectTabLabelWidth(tab, active: active), alignment: .leading)
-                .padding(.leading, 11).padding(.trailing, 8)
+                .padding(.leading, 11).padding(.trailing, workspace.canClose(tab) ? 8 : 11)
                 .frame(height: 28)
                 .contentShape(Rectangle())
             }
@@ -353,13 +355,16 @@ private struct ProjectTabButton: View {
             .simultaneousGesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { onReorder(.changed($0.translation.width)) }
                 .onEnded { onReorder(.ended($0.translation.width)) })
-            Button { Task { await workspace.close(tab.id) } } label: {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
-                    .frame(width: 16, height: 28)
-                    .padding(.trailing, 5)
-                    .contentShape(Rectangle())
-            }.buttonStyle(.plain).help("关闭 \(tab.title)").disabled(!workspace.canSwitch)
-                .accessibilityLabel("关闭 \(tab.title)")
+            // The only tab, still blank, has nothing to close: no button, and the pill closes up around its name.
+            if workspace.canClose(tab) {
+                Button { Task { await workspace.close(tab.id) } } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                        .frame(width: 16, height: 28)
+                        .padding(.trailing, 5)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain).help("关闭 \(tab.title)").disabled(!workspace.canSwitch)
+                    .accessibilityLabel("关闭 \(tab.title)")
+            }
         }
         .frame(height: 28)
         .background(targeted ? Color.accentColor.opacity(0.3) : Color.white.opacity(active ? 0.12 : 0.035), in: Capsule())

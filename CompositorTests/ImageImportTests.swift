@@ -36,6 +36,46 @@ struct ImageImportTests {
         #expect(result.thumbnail.height <= 96)
     }
 
+    // 64 × 32 WebP images: opaque red on the left, transparent on the right.
+    @Test(arguments: [
+        "UklGRiYAAABXRUJQVlA4TBkAAAAvP8AHEA8Q8x/zHwyxYDJ/6RB6I/ofVfANAA==", // Lossless
+        "UklGRoYAAABXRUJQVlA4WAoAAAAQAAAAPwAAHwAAQUxQSBQAAAABDzD/ERFCLJjMXzqE3oj+RxV8A1ZQOCBMAAAA8AMAnQEqQAAgAD4xFolDIiEhFgQAIAMEsYBmu0A/AD8AADKMNAliwAD+96KX/9eiUqpf3sP/+Fmfwsz+Fmf/Cc2fv90UD4A2eDkAAA==" // Lossy
+    ])
+    func webPImportPreservesTransparency(encoded: String) async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".webp")
+        try #require(Data(base64Encoded: encoded)).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(UTType.importableImages.contains(.webP))
+        let result = try await ImageImporter.shared.decode(url)
+        #expect(result.image.width == 64)
+        #expect(result.image.height == 32)
+        #expect(result.image.colorSpace?.name == CGColorSpace.sRGB)
+        #expect(result.thumbnail.width <= 96)
+        #expect(result.thumbnail.height <= 96)
+        let context = try #require(CGContext(data: nil, width: 64, height: 32, bitsPerComponent: 8,
+                                             bytesPerRow: 256, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(result.image, in: CGRect(x: 0, y: 0, width: 64, height: 32))
+        let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        #expect(bytes[0] >= 250)
+        #expect(bytes[3] == 255)
+        #expect(bytes[63 * 4 + 3] == 0)
+        do {
+            _ = try await ImageImporter.shared.decode(url, remainingPixels: 10)
+            Issue.record("Over-budget WebP should fail")
+        } catch ImageImportError.tooLarge { }
+        let session = EditorSession()
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.webP.identifier, visibility: .all) { completion in
+            completion(Data(base64Encoded: encoded), nil)
+            return nil
+        }
+        await ImageFileDrop.importProviders([provider], into: session, at: nil)
+        #expect(session.document?.size == CGSize(width: 64, height: 32))
+        #expect(session.document?.layers.count == 1)
+        #expect(session.importError == nil)
+    }
+
     @Test func orientationAndColorConversion() async throws {
         let url = try fixture(.tiff, orientation: 6, p3: true)
         defer { try? FileManager.default.removeItem(at: url) }
@@ -139,5 +179,55 @@ struct ImageImportTests {
         await ImageFileDrop.importProviders(providers, into: session, at: nil)
         #expect(session.document?.layers.map(\.name) == [first, second].map { $0.deletingPathExtension().lastPathComponent })
         #expect(session.importError == nil)
+    }
+
+    /// A folder brings in the images directly inside it, in the Finder's name order: not its other files, its hidden
+    /// ones, or what's in its subfolders. A project is a folder on disk too, but not one to import from.
+    @Test func folderImportsTheImagesDirectlyInsideIt() async throws {
+        let manager = FileManager.default
+        let folder = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let nested = folder.appendingPathComponent("More", isDirectory: true)
+        let project = folder.appendingPathComponent("Project.comp", isDirectory: true)
+        try manager.createDirectory(at: nested, withIntermediateDirectories: true)
+        try manager.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: folder) }
+        try manager.moveItem(at: try fixture(.png), to: folder.appendingPathComponent("10 Ten.png"))
+        try manager.moveItem(at: try fixture(.jpeg), to: folder.appendingPathComponent("2 Two.jpeg"))
+        try manager.moveItem(at: try fixture(.png), to: folder.appendingPathComponent(".Hidden.png"))
+        try manager.moveItem(at: try fixture(.png), to: nested.appendingPathComponent("Nested.png"))
+        try Data("notes".utf8).write(to: folder.appendingPathComponent("Notes.txt"))
+        #expect(ImageFolder.matches(folder))
+        #expect(!ImageFolder.matches(project))
+        let session = EditorSession()
+        await session.importImages([folder])
+        #expect(session.document?.layers.map(\.name) == ["2 Two", "10 Ten"])
+        #expect(session.importError == nil)
+    }
+
+    @Test func folderWithoutImagesSaysSo() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data("notes".utf8).write(to: folder.appendingPathComponent("Notes.txt"))
+        let session = EditorSession()
+        await session.importImages([folder])
+        #expect(session.document == nil)
+        #expect(session.importError?.contains("has no images to import") == true)
+    }
+
+    /// HEIF files from cameras (Canon, Sony and Fuji save .hif or .heif) are typed public.heif, not public.heic: the
+    /// import panel offers them and they come in like any HEIC.
+    @Test(arguments: ["hif", "heif"])
+    func cameraHEIFFilesImport(ext: String) async throws {
+        let type = try #require(UTType(filenameExtension: ext))
+        #expect(UTType.importableImages.contains { type.conforms(to: $0) }, "\(ext) is offered by the import panel")
+        let heic = try fixture(.heic)
+        let url = heic.deletingPathExtension().appendingPathExtension(ext)
+        try FileManager.default.moveItem(at: heic, to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let session = EditorSession()
+        await session.importImages([url])
+        #expect(session.importError == nil, "\(session.importError ?? "")")
+        #expect(session.document?.layers.count == 1 && session.document?.width == 64)
     }
 }

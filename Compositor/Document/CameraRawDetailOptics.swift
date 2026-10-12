@@ -113,7 +113,8 @@ nonisolated extension CameraRawSettings {
                                      optics.distortionK(profileStrength: profileStrength),
                                      optics.purpleAmount, optics.purpleHueLow, optics.purpleHueHigh,
                                      optics.greenAmount, optics.greenHueLow, optics.greenHueHigh,
-                                     optics.vignetteAmount, optics.vignetteMidpoint, scale)
+                                     optics.vignetteAmount, optics.vignetteMidpoint, scale,
+                                     CameraRawTables.exposureTables, Int32(CameraRawTables.size))
         }
         if detail.adjusts {
             adjust_camera_raw_detail(pixels, width, height, stride,

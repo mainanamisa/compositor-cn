@@ -804,6 +804,22 @@ final class EditorSession {
     private var pendingImports: [ImportRequest] = []
 
     func importImages(_ urls: [URL], at point: CGPoint? = nil) async {
+        // A folder brings in the images directly inside it, in name order. Its sandbox grant covers them, so it's
+        // held until they're all in.
+        var folders: [URL] = []
+        var empty: [String] = []
+        let urls = urls.flatMap { url -> [URL] in
+            guard ImageFolder.matches(url) else { return [url] }
+            if url.startAccessingSecurityScopedResource() { folders.append(url) }
+            let images = ImageFolder.images(in: url)
+            if images.isEmpty { empty.append(url.lastPathComponent) }
+            return images
+        }
+        defer { for folder in folders { folder.stopAccessingSecurityScopedResource() } }
+        if !empty.isEmpty {
+            let message = empty.map { "“\($0)” has no images to import." }.joined(separator: "\n")
+            importError = [importError, message].compactMap { $0 }.joined(separator: "\n\n")
+        }
         guard !urls.isEmpty else { return }
         if brushStroke != nil { await finishBrush() }
         cancelCrop()

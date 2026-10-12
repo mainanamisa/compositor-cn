@@ -86,7 +86,7 @@ struct TypeControls: View {
                                     change: { stepped in session.changeTextStyle { $0.leading = CGFloat(max(0, stepped)) } })
                         .help("行高，基线到基线。留空或为 0 时表示自动：字号的 120%。")
                 }
-            }.scrollIndicators(.hidden)
+            }.scrollIndicators(.never)
             if session.textDraft != nil {
                 Button("取消") { session.cancelText() }
                 Button("完成") { _ = session.finishText() }

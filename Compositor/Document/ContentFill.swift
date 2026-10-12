@@ -18,8 +18,9 @@ nonisolated enum ContentFill {
         mask.setFillColor(gray: 1, alpha: 1)
         mask.fill(rect.applying(job.mapping))
         mask.restoreGState()
-        let result = content_fill(pixels.data!.assumingMemoryBound(to: UInt8.self), pixels.bytesPerRow,
-            mask.data!.assumingMemoryBound(to: UInt8.self), mask.bytesPerRow, Int32(w), Int32(h))
+        // Multi-scale PatchMatch (PatchPixels.c), the same engine as Spot Healing's Content-Aware mode.
+        let result = patch_fill(pixels.data!.assumingMemoryBound(to: UInt8.self), pixels.bytesPerRow,
+            mask.data!.assumingMemoryBound(to: UInt8.self), mask.bytesPerRow, Int32(w), Int32(h), job.seed)
         guard result != 0 else { throw Failure.noSource }
         guard result == 1, let image = pixels.makeImage() else { throw ExportError.render }
         return image

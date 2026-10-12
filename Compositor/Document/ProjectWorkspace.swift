@@ -22,7 +22,6 @@ final class ProjectWorkspace {
     private(set) var selectedID: UUID
     var isManaging = false
     @ObservationIgnored weak var window: NSWindow?
-    @ObservationIgnored private var nextNumber = 2
     var current: ProjectTab { tabs.first { $0.id == selectedID } ?? tabs[0] }
     var canSwitch: Bool {
         let s = current.session
@@ -35,11 +34,21 @@ final class ProjectWorkspace {
         tabs = [first]; selectedID = first.id
         first.controller.workspace = self
     }
+    /// A new tab's name: "Untitled" if no tab shows it, otherwise the lowest "Untitled N" free, as Finder and Safari
+    /// number them. Counting up for ever, closing the last tab made Untitled 2, then 3, and on.
+    private var freeUntitledName: String {
+        let taken = Set(tabs.map(\.title))
+        guard taken.contains("未命名") else { return "未命名" }
+        return (2...).lazy.map { "未命名 \($0)" }.first { !taken.contains($0) }!
+    }
+    /// Whether a tab can close: not the only one while it's empty, the blank start it would only be replaced with.
+    func canClose(_ tab: ProjectTab) -> Bool {
+        !(tabs.count == 1 && tab.session.document == nil && tab.session.projectURL == nil)
+    }
     @discardableResult
     func addTab(reuseEmpty: Bool = true) -> ProjectTab {
         if reuseEmpty, tabs.count == 1, current.session.document == nil { return current }
-        let tab = ProjectTab(name: "未命名 \(nextNumber)")
-        nextNumber += 1
+        let tab = ProjectTab(name: freeUntitledName)
         tab.controller.workspace = self; tab.controller.window = window
         tabs.append(tab); selectedID = tab.id
         return tab
@@ -97,7 +106,7 @@ final class ProjectWorkspace {
         return true
     }
     func close(_ id: UUID) async {
-        guard canSwitch, let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard canSwitch, let tab = tabs.first(where: { $0.id == id }), canClose(tab) else { return }
         isManaging = true
         defer { isManaging = false }
         tab.controller.window = window

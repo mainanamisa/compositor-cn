@@ -127,7 +127,7 @@ struct BrushControls: View {
                 if session.isMaskSelected { Text("蒙版").foregroundStyle(.secondary) }
                 }
             }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.never)
         }
         .padding(.horizontal, 18).toolHeaderBar().releasesFocusOnCommit(session)
         .disabled(session.showsBusy)

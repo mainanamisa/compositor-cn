@@ -20,6 +20,13 @@ struct BlendModePicker: NSViewRepresentable {
         button.borderShape = .capsule
         return button
     }
+    /// As wide as it's offered. Left to itself, the pop-up insists on the width of its longest mode, wider than a
+    /// narrow Layers panel has room for, and that pushed the whole panel out past its edges.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView button: NSPopUpButton, context: Context) -> CGSize? {
+        let natural = button.intrinsicContentSize
+        guard let width = proposal.width, width.isFinite else { return natural }
+        return CGSize(width: max(width, 60), height: natural.height)
+    }
     func updateNSView(_ button: NSPopUpButton, context: Context) {
         button.isEnabled = session.canEditAppearance
         if !context.coordinator.tracking {
