@@ -128,6 +128,26 @@ import Testing
         #expect(second.session.document?.layers.first?.id == copied.id)
     }
 
+    /// A layer dragged into a new project tab makes a canvas its own size, with it filling it, not the size of the
+    /// canvas it came from.
+    @Test func aLayerDraggedIntoANewTabSizesTheCanvasToIt() async throws {
+        let workspace = ProjectWorkspace()
+        let first = workspace.current
+        first.session.createDocument(width: 400, height: 300)
+        let context = try #require(CGContext(data: nil, width: 120, height: 80, bitsPerComponent: 8, bytesPerRow: 480,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+        let image = try #require(context.makeImage())
+        first.session.insert(ImportedImage(image: image, thumbnail: image, name: "Red"), centeredAt: CGPoint(x: 300, y: 100))
+        let original = try #require(first.session.activeLayerID)
+        await workspace.copyLayer(original, into: nil)
+        let created = workspace.current
+        #expect(created !== first)
+        #expect(created.session.document?.size == CGSize(width: 120, height: 80))
+        #expect(created.session.document?.layers.first?.transform.origin == .zero)
+    }
+
     @Test func dockCreatesTabsAndTargetedImportUsesExistingTab() async throws {
         let url = try ImageImportTests().fixture(.png)
         defer { try? FileManager.default.removeItem(at: url) }

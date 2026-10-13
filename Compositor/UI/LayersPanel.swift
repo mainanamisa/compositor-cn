@@ -41,6 +41,12 @@ struct LayersPanel: View {
                     .help("将所选图层编组（⌘G）").accessibilityLabel("新建组").disabled(!session.layersLookEditable)
                 LayerMaskMenu(session: session)
                 Menu {
+                    ForEach(AdjustmentKind.allCases, id: \.self) { kind in
+                        Button(kind.displayName) { session.addAdjustment(kind) }
+                    }
+                } label: { Image(systemName: "circle.lefthalf.filled").footerHitArea() }
+                    .menuStyle(.borderlessButton).fixedSize().help("新建调整图层").disabled(!session.layersLookEditable)
+                Menu {
                     ForEach(LayerEffectKind.allCases, id: \.self) { kind in
                         Button(kind.displayName + "…") { session.addEffect(kind) }
                     }
@@ -48,12 +54,6 @@ struct LayersPanel: View {
                     .menuStyle(.borderlessButton).fixedSize()
                     .help("添加图层效果").accessibilityLabel("图层效果")
                     .accessibilityIdentifier("layerEffects").disabled(!session.layersLookEditable || session.activeLayer?.isGroup != false || session.activeLayer?.asset == nil)
-                Menu {
-                    ForEach(AdjustmentKind.allCases, id: \.self) { kind in
-                        Button(kind.displayName) { session.addAdjustment(kind) }
-                    }
-                } label: { Image(systemName: "circle.lefthalf.filled").footerHitArea() }
-                    .menuStyle(.borderlessButton).fixedSize().help("新建调整图层").disabled(!session.layersLookEditable)
                 Spacer()
                 Button { session.deleteLayerOrMask() } label: { FooterIcon(systemName: "trash") }
                     .help(session.selectedEffect != nil ? "删除所选效果" : session.isMaskSelected ? "删除图层蒙版" : session.selectedLayerIDs.count > 1 ? "删除选中的多个图层" : "删除所选图层")

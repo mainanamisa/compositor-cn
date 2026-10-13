@@ -7,3 +7,4 @@
 #import "Rendering/PatchPixels.h"
 #import "Rendering/AdjustPixels.h"
 #import "Rendering/DitherPixels.h"
+#import "Rendering/DeepPixels.h"

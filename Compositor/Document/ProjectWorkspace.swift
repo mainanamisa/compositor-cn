@@ -200,7 +200,7 @@ final class ProjectWorkspace {
     /// Cmd-V with a whole layer copied: pastes it complete — a copy above it in its own project, or brought over as
     /// dragging it onto this tab does. False when there is none, and Paste goes on with pixels.
     func pasteCopiedLayer() -> Bool {
-        let count = NSPasteboard.general.changeCount
+        let count = EditorSession.pasteboard.changeCount
         guard let source = tabs.first(where: { $0.session.copiedLayer?.changeCount == count }),
               let copied = source.session.copiedLayer?.ids, let layers = source.session.document?.layers else { return false }
         let ids = copied.filter { id in layers.contains { $0.id == id } }
@@ -251,12 +251,23 @@ final class ProjectWorkspace {
                 copied[i].maskSourceID = nil
             }
             let mapping = Dictionary(uniqueKeysWithValues: copied.map { ($0.id, UUID()) })
-            let size = target.session.document?.size ?? sourceDocument.size
             let pictured = copied.filter { !$0.isGroup }.map { CGRect(origin: $0.transform.origin, size: $0.transform.size) }
-            let anchor = ids.count == 1 || pictured.isEmpty
+            // A new project is the size of the pixels dragged in (turned as they're shown), not of the canvas they
+            // came from; layers with none of their own (adjustments, blank layers) don't count.
+            let drawn = copied.filter { !$0.isGroup && $0.adjustment == nil && ($0.asset != nil || $0.text != nil) }.map { layer in
+                let corners = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)].map(layer.transform.point)
+                let xs = corners.map(\.x), ys = corners.map(\.y)
+                return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+            }
+            let fitted = target.session.document == nil && !drawn.isEmpty
+                ? drawn.dropFirst().reduce(drawn[0]) { $0.union($1) }.integral : nil
+            let size = target.session.document?.size ?? fitted.map {
+                CGSize(width: min(CGFloat(DocumentLimits.maxSide), $0.width), height: min(CGFloat(DocumentLimits.maxSide), $0.height))
+            } ?? sourceDocument.size
+            let anchor = fitted.map { CGPoint(x: $0.midX, y: $0.midY) } ?? (ids.count == 1 || pictured.isEmpty
                 ? copied.first(where: { $0.id == id })?.transform.center ?? CGPoint(x: sourceDocument.size.width/2, y: sourceDocument.size.height/2)
-                : { let r = pictured.dropFirst().reduce(pictured[0]) { $0.union($1) }; return CGPoint(x: r.midX, y: r.midY) }()
-            let center = point ?? CGPoint(x: size.width/2, y: size.height/2)
+                : { let r = pictured.dropFirst().reduce(pictured[0]) { $0.union($1) }; return CGPoint(x: r.midX, y: r.midY) }())
+            let center = fitted == nil ? point ?? CGPoint(x: size.width/2, y: size.height/2) : CGPoint(x: size.width/2, y: size.height/2)
             let layers = copied.map { layer -> ImageLayer in
                 var transform = layer.transform
                 transform.origin.x += center.x-anchor.x; transform.origin.y += center.y-anchor.y

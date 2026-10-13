@@ -86,6 +86,10 @@ extension EditorSession {
                 guard let blur = blurSample(for: stroke) else { return }
                 stroke.clone = blur.sample
                 stroke.cloneRender = blur.render
+                if let deepRender = blur.deepRender {
+                    stroke.deepClone = blur.sample
+                    stroke.deepCloneRender = deepRender
+                }
             }
             stroke.isBlur = tool == .blur
             brushStroke = stroke

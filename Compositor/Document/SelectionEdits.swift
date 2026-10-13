@@ -120,9 +120,22 @@ extension EditorSession {
             }
             let job = PixelInvert.Job(image: image, isMask: mask,
                 pixelToDocument: BrushRaster.pixelToDocument(mask ? layer.maskTransform : layer.transform, width: image.width, height: image.height), selection: clip)
-            let result = try await Task.detached(priority: .userInitiated) { Box(try PixelInvert.run(job)) }.value.image
-            let asset = mask ? try LayerMask.asset(from: result)
+            // A 16-bit layer inverts through `DeepLayer.run`, keeping its precision.
+            let deep = mask ? nil : try layer.asset.flatMap { try DeepLayer.flattened($0) }
+            let asset: ImportedImage
+            if let deep {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    Box(try DeepLayer.run(deep) { half in
+                        try PixelInvert.run(PixelInvert.Job(image: half, isMask: false, pixelToDocument: job.pixelToDocument,
+                                                            selection: job.selection))
+                    })
+                }.value.image
+                asset = try DeepLayer.asset(result, name: layer.name)
+            } else {
+                let result = try await Task.detached(priority: .userInitiated) { Box(try PixelInvert.run(job)) }.value.image
+                asset = mask ? try LayerMask.asset(from: result)
                              : ImportedImage(image: result, thumbnail: try PixelInvert.thumbnail(of: result), name: layer.name)
+            }
             // Only write over the layer the invert was computed from.
             guard let current = self.document?.layers[safe: index], current.id == layer.id,
                   current.asset?.image === layer.asset?.image, current.mask?.asset.image === layer.mask?.asset.image else { return }

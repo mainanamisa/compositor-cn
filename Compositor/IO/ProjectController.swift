@@ -61,12 +61,19 @@ final class ProjectController {
         guard let snapshot = session.projectSnapshot() else { return }
         do {
             let raster = try await ImageExporter.shared.render(snapshot)
+            // With a 16-bit layer in it, a PNG can be written at 16 bits a channel too.
+            let deepRaster = snapshot.images.values.contains { $0.deep != nil }
+                ? try await ImageExporter.shared.render(snapshot, sixteenBit: true) : nil
+            // With an HDR layer in it, it can go out as an EXR, light brighter than white kept.
+            let hdrRaster = snapshot.images.values.contains { $0.isHDR }
+                ? try await ImageExporter.shared.render(snapshot, sixteenBit: true, hdr: true) : nil
             let chosen: (data: Data, format: ExportFormat)? = await withCheckedContinuation { continuation in
                 let sheet = NSWindow()
                 sheet.styleMask = [.titled, .fullSizeContentView]
                 sheet.title = "导出为"
                 sheet.contentViewController = NSHostingController(rootView: ExportAsSheet(
-                    raster: raster, session: session, format: start ?? lastExportFormat) { chosen in
+                    raster: raster, deepRaster: deepRaster, hdrRaster: hdrRaster, session: session,
+                    format: start ?? lastExportFormat) { chosen in
                     window.endSheet(sheet)
                     sheet.orderOut(nil)
                     // Release the hosted view and its closure after dismissal.
@@ -409,7 +416,7 @@ final class ProjectController {
 
 /// What File › Export As… writes.
 enum ExportFormat: String, CaseIterable {
-    case png = "PNG", jpeg = "JPEG", heic = "HEIC", webp = "WebP", tiff = "TIFF", gif = "GIF", bmp = "BMP", pdf = "PDF"
+    case png = "PNG", jpeg = "JPEG", heic = "HEIC", webp = "WebP", tiff = "TIFF", gif = "GIF", bmp = "BMP", pdf = "PDF", exr = "EXR"
     var type: UTType {
         switch self {
         case .png: .png
@@ -420,16 +427,17 @@ enum ExportFormat: String, CaseIterable {
         case .gif: .gif
         case .bmp: .bmp
         case .pdf: .pdf
+        case .exr: .openEXR
         }
     }
     /// Lossy formats get the dialog's quality slider.
     var supportsQuality: Bool { [.jpeg, .heic, .webp].contains(self) }
     /// The rest flatten transparency onto the background color, JPEG-fashion.
-    var supportsAlpha: Bool { [.png, .heic, .webp, .tiff, .pdf].contains(self) }
-    /// The formats this Mac can actually write, in picker order. PDF always is: it goes through CGPDFContext.
-    /// Probing replaces CGImageDestinationGetTypeIDs(), which the macOS 27 SDK removed from the headers; a
-    /// destination for an unsupported type fails to create.
+    var supportsAlpha: Bool { [.png, .heic, .webp, .tiff, .pdf, .exr].contains(self) }
+    /// The formats this Mac can actually write, in picker order. PDF and EXR always are: they go through CGPDFContext
+    /// and the EXR writer. Probing replaces CGImageDestinationGetTypeIDs(), which the macOS 27 SDK removed from the
+    /// headers; a destination for an unsupported type fails to create.
     static var available: [ExportFormat] {
-        allCases.filter { $0 == .pdf || CGImageDestinationCreateWithData(NSMutableData(), $0.type.identifier as CFString, 1, nil) != nil }
+        allCases.filter { $0 == .pdf || $0 == .exr || CGImageDestinationCreateWithData(NSMutableData(), $0.type.identifier as CFString, 1, nil) != nil }
     }
 }

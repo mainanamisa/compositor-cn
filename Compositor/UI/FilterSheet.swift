@@ -89,6 +89,24 @@ struct FilterSheet: View {
                 control("半径", \.radius, range: 0.1...250, unit: "px", decimals: 1, logarithmic: true)
                 Toggle("保留透明", isOn: flag(\.preserveTransparency))
                     .help("只模糊颜色，保持图层的轮廓和透明区域不变")
+            case .progressiveBlur:
+                Text("在画布上点按并拖出两个点")
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Text("形状")
+                    Picker("形状", selection: flag(\.progressiveRadial)) {
+                        Text("线性").tag(false)
+                        Text("径向").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("线性沿线条方向渐变模糊；径向保持起点清晰、向外逐渐模糊")
+                }
+                control("起点", \.progressiveFrom, range: 0...250, unit: "px", decimals: 1, logarithmic: false)
+                    .help("线条起点处的模糊量")
+                control("终点", \.progressiveTo, range: 0...250, unit: "px", decimals: 1, logarithmic: false)
+                    .help("线条终点及之外的模糊量")
+                Toggle("反转", isOn: flag(\.progressiveInverted))
+                    .help("交换起点和终点：起点模糊、向终点逐渐清晰")
             case .motionBlur:
                 control("角度", \.angle, range: -90...90, unit: "°", decimals: 0, logarithmic: false)
                 control("距离", \.distance, range: 1...2000, unit: "px", decimals: 0, logarithmic: true)

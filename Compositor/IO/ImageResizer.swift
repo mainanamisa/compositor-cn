@@ -50,17 +50,17 @@ actor ImageResizer {
                 usedPixels += width * height
                 guard let source = snapshot.images[layer.id] else { throw ProjectError.missingImage }
                 let asset = try autoreleasepool {
-                    guard let context = CGContext(data: nil, width: width, height: height,
-                        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ExportError.render }
-                    context.translateBy(x: 0, y: CGFloat(height))
-                    context.scaleBy(x: 1, y: -1)
+                    // A 16-bit or HDR layer is resampled from its own pixels, at their depth (`DeepLayer`).
+                    let deep = try DeepLayer.flattened(source)
+                    let context = try deep.map { try DeepLayer.context(width: width, height: height, hdr: DeepLayer.isHDR($0)) }
+                        ?? BrushRaster.context(width: width, height: height, mask: false)
                     context.translateBy(x: -left, y: -top)
                     context.scaleBy(x: sx, y: sy)
                     var sourceTransform = layer.transform
                     sourceTransform.sampling = options.sampling
-                    LayerRenderer.draw(source.image, transform: sourceTransform, center: sourceTransform.center, in: context)
+                    LayerRenderer.draw(deep ?? source.image, transform: sourceTransform, center: sourceTransform.center, in: context)
                     guard let image = context.makeImage() else { throw ExportError.render }
+                    if deep != nil { return try DeepLayer.asset(image, name: source.name) }
                     let factor = min(1, 96 / CGFloat(max(width, height)))
                     let tw = max(1, Int(CGFloat(width) * factor)), th = max(1, Int(CGFloat(height) * factor))
                     guard let thumb = CGContext(data: nil, width: tw, height: th, bitsPerComponent: 8,

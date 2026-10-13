@@ -43,17 +43,25 @@ extension EditorSession {
             if let source = copy.maskSourceID, !kept.contains(source) { copy.maskSourceID = nil }
             return copy
         }
-        let flat = CanvasDocument(id: document.id, width: document.width, height: document.height,
-                                  layers: subset, resolution: document.resolution)
-        guard let context = try? BrushRaster.context(width: document.width, height: document.height, mask: false) else { return }
-        drawLiveComposite(flat, in: context)
         let canvas = LayerTransform(origin: .zero, size: CGSize(width: document.width, height: document.height))
-        guard let full = context.makeImage(),
-              let trimmed = try? PixelFilter.trimmed(full, placed: canvas),
-              let thumbnail = try? PixelAdjust.thumbnail(of: trimmed.image) else { NSSound.beep(); return }
-        var merged = ImageLayer(asset: ImportedImage(image: trimmed.image, thumbnail: thumbnail, name: plan.name),
-                                origin: trimmed.transform.origin)
-        merged.transform = trimmed.transform
+        let asset: ImportedImage, placed: LayerTransform
+        if subset.contains(where: { $0.asset?.deep != nil }) {
+            // With a 16-bit layer in it, the merge is drawn at 16 bits from each 16-bit layer's own pixels, and the
+            // result is a 16-bit layer (`DeepLayer`).
+            guard let made = try? mergedSixteenBit(subset, document: document, canvas: canvas, name: plan.name) else { NSSound.beep(); return }
+            (asset, placed) = made
+        } else {
+            let flat = CanvasDocument(id: document.id, width: document.width, height: document.height,
+                                      layers: subset, resolution: document.resolution)
+            guard let context = try? BrushRaster.context(width: document.width, height: document.height, mask: false) else { return }
+            drawLiveComposite(flat, in: context)
+            guard let full = context.makeImage(),
+                  let trimmed = try? PixelFilter.trimmed(full, placed: canvas),
+                  let thumbnail = try? PixelAdjust.thumbnail(of: trimmed.image) else { NSSound.beep(); return }
+            (asset, placed) = (ImportedImage(image: trimmed.image, thumbnail: thumbnail, name: plan.name), trimmed.transform)
+        }
+        var merged = ImageLayer(asset: asset, origin: placed.origin)
+        merged.transform = placed
         merged.name = plan.name
         merged.parentID = plan.parent
         var next = layers.filter { !plan.removed.contains($0.id) }
@@ -68,5 +76,30 @@ extension EditorSession {
         self.document?.layers = next
         activeLayerID = merged.id
         endEdit()
+    }
+
+    /// The merged layers composited at 16 bits, 16-bit layers drawn from their whole 16-bit pixels, trimmed as an 8-bit
+    /// merge is: the merged layer's asset and its placement.
+    private func mergedSixteenBit(_ subset: [ImageLayer], document: CanvasDocument, canvas: LayerTransform,
+                                  name: String) throws -> (ImportedImage, LayerTransform) {
+        let deepLayers = try subset.map { layer -> ImageLayer in
+            guard let asset = layer.asset, let deep = try DeepLayer.flattened(asset) else { return layer }
+            var copy = layer
+            copy.asset = ImportedImage(image: deep, thumbnail: asset.thumbnail, name: asset.name)
+            return copy
+        }
+        let flat = CanvasDocument(id: document.id, width: document.width, height: document.height,
+                                  layers: deepLayers, resolution: document.resolution)
+        // With an HDR layer among them, the merge keeps light brighter than white too.
+        let hdr = subset.contains { $0.asset?.isHDR == true }
+        let context = try DeepLayer.context(width: document.width, height: document.height, hdr: hdr)
+        drawLiveComposite(flat, in: context, sixteenBit: true, hdr: hdr)
+        guard var full = context.makeImage() else { throw ExportError.render }
+        var placed = canvas
+        if let crop = try PixelFilter.trimCrop(try DeepLayer.dithered(full)), let cropped = full.cropping(to: crop) {
+            placed = PixelFilter.trimmedTransform(canvas, crop: crop, width: full.width, height: full.height)
+            full = cropped
+        }
+        return (try DeepLayer.asset(full, name: name), placed)
     }
 }

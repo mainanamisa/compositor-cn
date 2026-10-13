@@ -86,9 +86,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-results
+          # The app's crash reports too: a test that crashes the app shows only "signal segv" in the results.
           path: |
             *.xcresult
             *.log
+            ~/Library/Logs/DiagnosticReports/Compositor*.ips
           retention-days: 7
           if-no-files-found: ignore
 

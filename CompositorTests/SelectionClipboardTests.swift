@@ -2,7 +2,8 @@ import AppKit
 import Testing
 @testable import Compositor
 
-/// Serialized: every test shares the one system pasteboard.
+/// Serialized: every test in this process shares its one pasteboard (`EditorSession.pasteboard`, private to the process,
+/// so other test processes running in parallel can't copy over it).
 @MainActor @Suite(.serialized)
 struct SelectionClipboardTests {
     private let red = PaletteColor(red: 1, green: 0, blue: 0)
@@ -43,6 +44,48 @@ struct SelectionClipboardTests {
         session.document = solo
         defer { session.document = full }
         return try pixel(try await render(session), x: x, y: y)
+    }
+
+    /// PNG data for a `width`×`height` image, at 8 or 16 bits a channel, as another app puts on the clipboard.
+    private func png(width: Int, height: Int, bits: Int = 8) throws -> Data {
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: bits,
+            bytesPerRow: width * 4 * bits / 8, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | (bits == 16 ? CGBitmapInfo.byteOrder16Little.rawValue : 0)))
+        context.setFillColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let image = try #require(context.makeImage())
+        return try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+    }
+
+    /// Cmd-V on the New canvas screen with an image on the clipboard makes a canvas its size with it in it; a 16-bit one
+    /// comes in as a 16-bit layer, as importing it would.
+    @Test(arguments: [8, 16])
+    func pastingAnImageOnTheNewCanvasScreenMakesTheCanvas(bits: Int) async throws {
+        let session = EditorSession()
+        let pasteboard = EditorSession.pasteboard
+        pasteboard.clearContents()
+        pasteboard.setData(try png(width: 320, height: 200, bits: bits), forType: .png)
+        #expect(session.document == nil && session.canPasteImageAsNewCanvas)
+        await session.pasteImageAsNewCanvas()
+        let document = try #require(session.document, "a canvas")
+        #expect(document.width == 320 && document.height == 200)
+        #expect(document.layers.count == 1 && document.layers.first?.size == CGSize(width: 320, height: 200))
+        #expect((document.layers.first?.asset?.deep != nil) == (bits == 16))
+        #expect(session.canPasteImageAsNewCanvas == false, "with a canvas, Paste pastes into it")
+    }
+
+    /// A size copied as text goes into the size field, image or not.
+    @Test func aSizeOnTheClipboardIsLeftForTheField() throws {
+        let session = EditorSession()
+        let pasteboard = EditorSession.pasteboard
+        pasteboard.clearContents()
+        pasteboard.setString("1920", forType: .string)
+        #expect(!session.canPasteImageAsNewCanvas)
+        pasteboard.setData(try png(width: 10, height: 10), forType: .png)
+        #expect(!session.canPasteImageAsNewCanvas, "a size and an image: the size")
+        pasteboard.clearContents()
+        pasteboard.setString("hello", forType: .string)
+        #expect(!session.canPasteImageAsNewCanvas, "text alone has no image to make a canvas from")
     }
 
     @Test func copyAndPastePutsPixelsOnANewLayerInPlace() async throws {

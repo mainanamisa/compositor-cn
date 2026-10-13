@@ -18,6 +18,12 @@ nonisolated final class LiveMaskRenderer {
     var adjustmentOpacity: (UUID) -> Double = { _ in 1 }
     var adjustmentClip: (UUID, CGContext) -> Void = { _, _ in }
     var adjustmentScale: CGFloat = 1
+    /// Compositing at 16 bits a channel (a 16-bit export or merge): clipping stacks get 16-bit surfaces, and
+    /// adjustment layers work on the 16-bit pixels below them through `DeepLayer.run`, so a 16-bit layer under an
+    /// adjustment keeps its precision. Off, everything is 8-bit as on the canvas.
+    var sixteenBit = false
+    /// With `sixteenBit`, at an HDR layer's half floats instead (a merge with one), keeping light brighter than white.
+    var hdr = false
     /// The part of the document `bounds` shows, when the context isn't laid out in document pixels (the canvas), so
     /// Grain's and Add Noise's patterns stay with the document.
     var adjustmentRegion: ((CGRect) -> CGRect)?
@@ -31,8 +37,12 @@ nonisolated final class LiveMaskRenderer {
         return (w, h)
     }
     private func adjust(_ id: UUID, in context: CGContext) {
-        guard let settings = adjustment(id), let original = context.makeImage(),
-              var adjusted = try? settings.apply(original, region: adjustmentRegion?(bounds) ?? bounds, scale: adjustmentScale) else { return }
+        guard let settings = adjustment(id), let original = context.makeImage() else { return }
+        let region = adjustmentRegion?(bounds) ?? bounds, scale = adjustmentScale
+        let deep = sixteenBit && original.bitsPerComponent == 16
+        guard var adjusted = try? deep ? settings.applySixteenBit(original, region: region, scale: scale)
+                                       : settings.apply(original, region: region, scale: scale) else { return }
+        // In a blend mode the adjustment blends at 8 bits.
         if blendMode(id) != .normal {
             // Blend colors at full coverage, then restore the original alpha.
             // Source-over of two translucent copies would thicken soft edges.
@@ -65,7 +75,9 @@ nonisolated final class LiveMaskRenderer {
             let blend = CIImage(cgImage: adjusted).applyingFilter("CIBlendWithMask", parameters: [
                 kCIInputBackgroundImageKey: CIImage(cgImage: original),
                 kCIInputMaskImageKey: CIImage(color: CIColor(red: opacity, green: opacity, blue: opacity)).cropped(to: CIImage(cgImage: original).extent)])
-            guard let result = try? PixelAdjust.render(blend, width: original.width, height: original.height, isMask: false) else { return }
+            guard let result = try? deep ? DeepLayer.render(blend, width: original.width, height: original.height,
+                                                            hdr: DeepLayer.isHDR(original))
+                                         : PixelAdjust.render(blend, width: original.width, height: original.height, isMask: false) else { return }
             image = result
         } else { image = adjusted }
         context.saveGState()
@@ -97,7 +109,7 @@ nonisolated final class LiveMaskRenderer {
             return
         }
         guard let children = stacks[id], let (w, h) = pixelSize,
-              let group = try? BrushRaster.context(width: w, height: h, mask: false),
+              let group = try? sixteenBit ? DeepLayer.context(width: w, height: h, hdr: hdr) : BrushRaster.context(width: w, height: h, mask: false),
               let alpha = try? BrushRaster.context(width: w, height: h, mask: true) else {
             if let children = stacks[id] { stacked.subtract(children) }
             draw(id, in: context); return
@@ -105,15 +117,29 @@ nonisolated final class LiveMaskRenderer {
         group.scaleBy(x: resolution, y: resolution)
         group.translateBy(x: -bounds.minX, y: -bounds.minY)
         drawOwn(id, group)
-        let pixels = group.data!.assumingMemoryBound(to: UInt8.self)
-        let coverage = alpha.data!.assumingMemoryBound(to: UInt8.self)
-        layer_extract_alpha(pixels, group.bytesPerRow, coverage, alpha.bytesPerRow, w, h)
-        layer_unpremultiply_opaque(pixels, group.bytesPerRow, w, h)
+        var deepAlpha = sixteenBit && !hdr ? [UInt16](repeating: 0, count: w * h) : []
+        var hdrAlpha = sixteenBit && hdr ? [Float](repeating: 0, count: w * h) : []
+        if sixteenBit && hdr {
+            deep_extract_alpha_hdr(group.data!.assumingMemoryBound(to: UInt16.self), group.bytesPerRow, &hdrAlpha, w, h)
+        } else if sixteenBit {
+            deep_extract_alpha(group.data!.assumingMemoryBound(to: UInt16.self), group.bytesPerRow, &deepAlpha, w, h)
+        } else {
+            let pixels = group.data!.assumingMemoryBound(to: UInt8.self)
+            layer_extract_alpha(pixels, group.bytesPerRow, alpha.data!.assumingMemoryBound(to: UInt8.self), alpha.bytesPerRow, w, h)
+            layer_unpremultiply_opaque(pixels, group.bytesPerRow, w, h)
+        }
         for child in children {
             if adjustment(child) != nil { adjust(child, in: group) }
             else { drawOwn(child, group) }
         }
-        layer_restore_alpha(pixels, group.bytesPerRow, coverage, alpha.bytesPerRow, w, h)
+        if sixteenBit && hdr {
+            deep_restore_alpha_hdr(group.data!.assumingMemoryBound(to: UInt16.self), group.bytesPerRow, hdrAlpha, w, h)
+        } else if sixteenBit {
+            deep_restore_alpha(group.data!.assumingMemoryBound(to: UInt16.self), group.bytesPerRow, deepAlpha, w, h)
+        } else {
+            layer_restore_alpha(group.data!.assumingMemoryBound(to: UInt8.self), group.bytesPerRow,
+                                alpha.data!.assumingMemoryBound(to: UInt8.self), alpha.bytesPerRow, w, h)
+        }
         if let image = group.makeImage() {
             let bounds = bounds
             func place(_ target: CGContext) {

@@ -28,21 +28,25 @@ extension EditorSession {
         guard canTransformSelection, let document, let source = activeLayer else { NSSound.beep(); return }
         let lifted: (image: CGImage, region: CGRect)
         do {
-            guard let pixels = try renderSelectedPixels(from: source, mask: false) else { NSSound.beep(); return }
+            // A 16-bit layer's selection lifts at 16 bits, into a 16-bit floating layer.
+            guard let pixels = try renderSelectedPixels(from: source, mask: false, sixteenBit: source.asset?.deep != nil) else {
+                NSSound.beep(); return
+            }
             lifted = pixels
         } catch { brushError = error.localizedDescription; return }
         let before = document, beforeActive = activeLayerID
         // Outer edit: closed by commitTransform (merge) or cancelTransform (restore).
         beginEdit("变换选区")
         await clearSelectedPixels()
-        guard let index = self.document?.layers.firstIndex(where: { $0.id == source.id }),
-              let thumbnail = try? PixelInvert.thumbnail(of: lifted.image) else {
+        let asset = lifted.image.bitsPerComponent > 8
+            ? try? DeepLayer.asset(lifted.image, name: "Floating Selection")
+            : (try? PixelInvert.thumbnail(of: lifted.image)).map { ImportedImage(image: lifted.image, thumbnail: $0, name: "Floating Selection") }
+        guard let index = self.document?.layers.firstIndex(where: { $0.id == source.id }), let asset else {
             self.document = before
             endEdit()
             return
         }
-        var floating = ImageLayer(asset: ImportedImage(image: lifted.image, thumbnail: thumbnail, name: "浮动选区"),
-                                  origin: lifted.region.origin)
+        var floating = ImageLayer(asset: asset, origin: lifted.region.origin)
         floating.name = "浮动选区"
         floating.parentID = source.parentID
         floating.opacity = source.opacity
@@ -69,11 +73,13 @@ extension EditorSession {
         defer { endEdit() }
         do {
             guard edit.draft.isValid, let layers = document?.layers,
-                  let pixels = layers.first(where: { $0.id == edit.layerID })?.asset?.image,
+                  let floatingAsset = layers.first(where: { $0.id == edit.layerID })?.asset,
+                  case let pixels = try DeepLayer.flattened(floatingAsset) ?? floatingAsset.image,
                   let source = layers.first(where: { $0.id == floating.sourceID }) else { throw ProjectError.invalid }
             // A distorted selection is warped into its new shape first, then merged like any other.
             let placed = try edit.corners.map { corners -> (image: CGImage, transform: LayerTransform) in
-                let warped = try DistortWarp.warpTrimmed(pixels, transform: edit.draft, corners: corners)
+                let warped = try DistortWarp.warpTrimmed(pixels, transform: edit.draft, corners: corners,
+                                                         sixteenBit: pixels.bitsPerComponent > 8)
                 return (warped.image, warped.transform)
             } ?? (image: pixels, transform: edit.draft)
             let merged = try FloatingMerge.merge(placed.image, transform: placed.transform, into: source)
@@ -121,7 +127,11 @@ nonisolated enum FloatingMerge {
     /// the new area.
     static func merge(_ pixels: CGImage, transform: LayerTransform, into source: ImageLayer)
         throws -> (asset: ImportedImage, transform: LayerTransform, mask: LayerMask?) {
-        guard let sourceImage = source.asset?.image else { throw ProjectError.invalid }
+        guard let sourceAsset = source.asset else { throw ProjectError.invalid }
+        // A 16-bit layer, or 16-bit pixels going in, merge at 16 bits and leave a 16-bit layer (`DeepLayer`).
+        let sourceDeep = try DeepLayer.flattened(sourceAsset)
+        let sixteenBit = sourceDeep != nil || pixels.bitsPerComponent > 8
+        let sourceImage = sourceDeep ?? sourceAsset.image
         let width = sourceImage.width, height = sourceImage.height
         let toDocument = BrushRaster.pixelToDocument(source.transform, width: width, height: height)
         let toPixels = toDocument.inverted()
@@ -131,7 +141,10 @@ nonisolated enum FloatingMerge {
         let extent = original.union(floatingBounds).integral
         guard extent.width <= DocumentLimits.maxSideExtent, extent.height <= DocumentLimits.maxSideExtent, extent.width * extent.height <= DocumentLimits.maxSurfaceExtent
         else { throw ProjectError.tooLarge }
-        let context = try BrushRaster.context(width: Int(extent.width), height: Int(extent.height), mask: false)
+        // An HDR layer, or HDR pixels going in, keep light brighter than white.
+        let hdr = sourceDeep.map(DeepLayer.isHDR) == true || DeepLayer.isHDR(pixels)
+        let context = sixteenBit ? try DeepLayer.context(width: Int(extent.width), height: Int(extent.height), hdr: hdr)
+                                 : try BrushRaster.context(width: Int(extent.width), height: Int(extent.height), mask: false)
         let placed = original.offsetBy(dx: -extent.minX, dy: -extent.minY)
         BrushRaster.draw(sourceImage, in: placed, mask: false, context: context)
         context.saveGState()
@@ -140,7 +153,8 @@ nonisolated enum FloatingMerge {
         LayerRenderer.draw(pixels, transform: transform, center: transform.center, in: context)
         context.restoreGState()
         guard let image = context.makeImage() else { throw ExportError.render }
-        let asset = ImportedImage(image: image, thumbnail: try PixelInvert.thumbnail(of: image), name: source.name)
+        let asset = sixteenBit ? try DeepLayer.asset(image, name: source.name)
+                               : ImportedImage(image: image, thumbnail: try PixelInvert.thumbnail(of: image), name: source.name)
         var merged = source.transform
         merged.size = CGSize(width: extent.width * source.size.width / CGFloat(width),
                              height: extent.height * source.size.height / CGFloat(height))

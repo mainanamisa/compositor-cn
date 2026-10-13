@@ -7,7 +7,9 @@ extension EditorSession {
     /// in the options bar, measured on the canvas, at the layer's own resolution. It is taken when the stroke starts,
     /// so going over an area again in a new stroke softens it further, as in Photoshop. `render` makes any part of the
     /// softened sample, so only what the brush reaches is ever blurred; `image` is the sharp sample, the same size.
-    func blurSample(for stroke: BrushStroke) -> (sample: (image: CGImage, placed: CGRect, inGrid: Bool), render: (CGRect) -> CGImage?)? {
+    /// `deepRender`, for a 16-bit layer: the same, softened from its 16-bit pixels and made at 16 bits (`DeepLayer`).
+    func blurSample(for stroke: BrushStroke) -> (sample: (image: CGImage, placed: CGRect, inGrid: Bool), render: (CGRect) -> CGImage?,
+                                                 deepRender: ((CGRect) -> CGImage?)?)? {
         let layer = stroke.layer
         guard let image = stroke.isMask ? layer.mask?.asset.image : layer.asset?.image else { return nil }
         // The canvas's softening, carried into the layer's pixels: wider there when the layer is scaled down.
@@ -44,6 +46,29 @@ extension EditorSession {
                 format: isMask ? .L8 : .RGBA8,
                 colorSpace: isMask ? CGColorSpaceCreateDeviceGray() : CGColorSpace(name: CGColorSpace.sRGB)!)
         }
-        return ((sharp, region, true), render)
+        var deepRender: ((CGRect) -> CGImage?)?
+        if !isMask, let asset = layer.asset, asset.deep != nil {
+            // Made once, when the brush first reaches the layer.
+            var deepSoft: CIImage?
+            deepRender = { part in
+                if deepSoft == nil {
+                    guard let deep = try? DeepLayer.flattened(asset),
+                          let wide = try? DeepLayer.context(width: width, height: height, hdr: DeepLayer.isHDR(deep)) else { return nil }
+                    BrushRaster.draw(deep, in: placed, mask: false, context: wide)
+                    guard let sharp = wide.makeImage() else { return nil }
+                    deepSoft = CIImage(cgImage: sharp).applyingGaussianBlur(sigma: sigma * fit).cropped(to: extent)
+                }
+                guard let deepSoft else { return nil }
+                return DeepLayer.ciContext.createCGImage(deepSoft, from: CGRect(x: part.minX, y: CGFloat(height) - part.maxY,
+                                                                                  width: part.width, height: part.height),
+                    format: asset.isHDR ? .RGBAh : .RGBA16, colorSpace: asset.isHDR ? DeepLayer.hdrSpace : CGColorSpace(name: CGColorSpace.sRGB)!)
+            }
+        }
+        if let deepRender {
+            // While painting, the 16-bit sample dithered down: rounded straight to 8 bits, a smooth 16-bit layer's
+            // softened copy came out in bands until the stroke ended.
+            return ((sharp, region, true), { part in deepRender(part).flatMap { try? DeepLayer.dithered($0) } ?? render(part) }, deepRender)
+        }
+        return ((sharp, region, true), render, deepRender)
     }
 }
