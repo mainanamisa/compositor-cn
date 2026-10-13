@@ -1,8 +1,8 @@
-# Compositor project format, versions 1–11
+# Compositor project format, versions 1–13
 
 A `.comp` file is a macOS document package containing `manifest.json` and an `images/` directory of `<layer UUID>.png` assets.
 
-The manifest identifies `com.compositor.project`, version `11` for new saves (versions `1`–`10` remain readable), and the sRGB working space. It stores document UUID, pixel dimensions, active layer UUID, and layers in bottom-to-top order. Each layer stores its UUID, name, visibility, transform (origin, size, clockwise rotation, flips, sampling), and optional image filename. Blank layers have no image asset.
+The manifest identifies `com.compositor.project`, version `12` for new saves (versions `1`–`11` remain readable), and the sRGB working space. It stores document UUID, pixel dimensions, active layer UUID, and layers in bottom-to-top order. Each layer stores its UUID, name, visibility, transform (origin, size, clockwise rotation, flips, sampling), and optional image filename. Blank layers have no image asset.
 
 Embedded PNGs preserve source pixels and transparency; transforms remain separate. Projects survive moving or deleting imported source photos. Saving uses a coordinated atomic package replacement. Unsupported versions, invalid metadata, missing assets, unsafe paths, and oversized data are rejected before replacing the live document.
 
@@ -50,3 +50,7 @@ Pixel layer records may include optional `text` metadata: content, PostScript fo
 ### Layer effects
 
 An optional `effects` record contains independent `stroke`, `shadow`, `colorOverlay`, `innerShadow`, `outerGlow` and `innerGlow` records. Stroke carries a size (0–500 layer pixels), a color, an opacity and an `inside` flag choosing which side of the edge it sits on; drop shadow and inner shadow each carry an angle, a distance, a blur, a color and an opacity; color overlay carries a color and an opacity; outer glow and inner glow each carry a size (0–500 layer pixels), a color and an opacity. Each supports optional `enabled` visibility (missing means visible); hidden effects keep all parameters and remain listed under their layer. Effects, including their visibility, are saved and participate in document undo. They stay with their layer through every edit, pixel edits included; Image Size scales their sizes, distances and blurs with the image. Canvas previews run on a serial background worker with a shared pixel budget; exports render the full-resolution effects. A record omitting an effect means that layer does not have it, so older readers see the effects they understand and ignore the rest.
+
+Version 12 lets a layer's image file be a 16-bit PNG: a 16-bit layer, which keeps its pixels at 16 bits a channel (sRGB, premultiplied alpha as in every PNG layer) and is shown and edited through a copy rounded to 8 bits with a fine noise, made again on load rather than stored. Masks stay 8-bit. Nothing in the manifest changes: the PNG's own bit depth says which kind of layer it is. Files declaring versions 1–11 cannot contain 16-bit images, and older app builds reject v12.
+
+Version 13 lets a layer's image file be OpenEXR, named `<layer UUID>.exr`: an HDR layer, whose pixels hold light brighter than white as half floats in extended sRGB (white is 1). It is shown, and for now edited, through a copy clipped to white and rounded to 8 bits with a fine noise, made again on load. An EXR whose values all stay within white loads as a 16-bit layer. Masks stay 8-bit PNG. Files declaring versions 1–12 cannot contain EXR images, and older app builds reject v13.

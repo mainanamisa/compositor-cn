@@ -61,12 +61,19 @@ final class ProjectController {
         guard let snapshot = session.projectSnapshot() else { return }
         do {
             let raster = try await ImageExporter.shared.render(snapshot)
+            // With a 16-bit layer in it, a PNG can be written at 16 bits a channel too.
+            let deepRaster = snapshot.images.values.contains { $0.deep != nil }
+                ? try await ImageExporter.shared.render(snapshot, sixteenBit: true) : nil
+            // With an HDR layer in it, it can go out as an EXR, light brighter than white kept.
+            let hdrRaster = snapshot.images.values.contains { $0.isHDR }
+                ? try await ImageExporter.shared.render(snapshot, sixteenBit: true, hdr: true) : nil
             let chosen: (data: Data, format: ExportFormat)? = await withCheckedContinuation { continuation in
                 let sheet = NSWindow()
                 sheet.styleMask = [.titled, .fullSizeContentView]
                 sheet.title = "Export As"
                 sheet.contentViewController = NSHostingController(rootView: ExportAsSheet(
-                    raster: raster, session: session, format: start ?? lastExportFormat) { chosen in
+                    raster: raster, deepRaster: deepRaster, hdrRaster: hdrRaster, session: session,
+                    format: start ?? lastExportFormat) { chosen in
                     window.endSheet(sheet)
                     sheet.orderOut(nil)
                     // Release the hosted view and its closure after dismissal.
@@ -408,12 +415,14 @@ final class ProjectController {
 
 /// What File › Export As… writes.
 enum ExportFormat: String, CaseIterable {
-    case png = "PNG", jpeg = "JPEG", pdf = "PDF"
+    case png = "PNG", jpeg = "JPEG", tiff = "TIFF", pdf = "PDF", exr = "EXR"
     var type: UTType {
         switch self {
         case .png: .png
         case .jpeg: .jpeg
+        case .tiff: .tiff
         case .pdf: .pdf
+        case .exr: .openEXR
         }
     }
 }

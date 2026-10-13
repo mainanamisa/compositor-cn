@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct CompositorApp: App {
@@ -77,12 +78,13 @@ struct CompositorApp: App {
                         .configuredKeyboardShortcut("s", modifiers: [.command, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
                     Divider()
-                    Button("导出 PNG…") { Task { await applicationDelegate.projects.exportPNG() } }
-                        .configuredKeyboardShortcut("e", modifiers: [.command, .shift])
-                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+
                     // Export As on JPEG.
                     Button("导出 JPEG…") { Task { await applicationDelegate.projects.exportAs(start: .jpeg) } }
                         .configuredKeyboardShortcut("s", modifiers: [.command, .option, .shift])
+                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                    Button("导出 PNG…") { Task { await applicationDelegate.projects.exportPNG() } }
+                        .configuredKeyboardShortcut("e", modifiers: [.command, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
                     // PNG, JPEG or PDF, sized and previewed; ⌥⇧⌘W, as Photoshop's Export As.
                     Button("导出为…") { Task { await applicationDelegate.projects.exportAs() } }
@@ -132,6 +134,26 @@ struct CompositorApp: App {
                         Toggle("显示变换控件", isOn: Binding(get: { session.showsTransformControls },
                                                                           set: { session.showsTransformControls = $0 }))
                             .configuredKeyboardShortcut("h").disabled(session.tool != .move || session.document == nil)
+                        Divider()
+                        // Print: the canvas as the chosen CMYK profile will print it, tucked in a submenu as few need it. No
+                        // shortcuts (Photoshop's ⌘Y sits by ⌘U and would be hit by mistake); Search Commands finds them.
+                        Menu("CMYK") {
+                            Toggle("校样颜色", isOn: Binding(get: { session.proofsColors }, set: { session.proofsColors = $0 }))
+                                .disabled(session.document == nil)
+                            Toggle("色域警告", isOn: Binding(get: { session.showsGamutWarning },
+                                                                  set: { session.showsGamutWarning = $0 }))
+                                .disabled(session.document == nil)
+                            Divider()
+                            Menu("配置文件") {
+                                let current = session.proofProfile ?? CMYK.chosen
+                                ForEach(CMYK.installed()) { profile in
+                                    Toggle(profile.name, isOn: Binding(get: { current?.name == profile.name },
+                                                                       set: { if $0 { session.proofProfile = profile } }))
+                                }
+                                Divider()
+                                Button("载入配置文件…") { loadCMYKProfile() }
+                            }
+                        }
                         Group {
                             Divider()
                             Menu("显示") {
@@ -194,7 +216,10 @@ struct CompositorApp: App {
                     Button("合并拷贝") { session.copyMergedSelection() }
                         .configuredKeyboardShortcut("c", modifiers: [.command, .shift]).disabled(!session.canCopyMerged)
                     Button("粘贴") {
-                        if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
+                        // On the New canvas screen an image on the clipboard makes the canvas, even with a size field
+                        // being typed in; a size copied as text still goes into the field.
+                        if session.canPasteImageAsNewCanvas { Task { await session.pasteImageAsNewCanvas() } }
+                        else if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
                         else if applicationDelegate.workspace.pasteCopiedLayer() { }
                         else if session.canPaste { session.paste() }
                         else { NSSound.beep() }
@@ -364,6 +389,16 @@ struct CompositorApp: App {
                 }
             }
     }
+
+    /// View › CMYK › Profile › Load Profile: a CMYK ICC profile picked from anywhere, kept and chosen.
+    private func loadCMYKProfile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "icc") ?? .data, UTType(filenameExtension: "icm") ?? .data]
+        panel.message = "选择一个 CMYK ICC 配置文件，例如印刷厂提供的那份"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { session.proofProfile = try CMYK.load(url) }
+        catch { session.importError = error.localizedDescription }
+    }
 }
 
 /// The ⌘E menu title: `mergeTitle` doubles as the undo name and stays English, so the menu maps it here.
@@ -382,6 +417,7 @@ extension FilterKind {
         switch self {
         case .gaussianBlur: return "高斯模糊"
         case .motionBlur: return "动感模糊"
+        case .progressiveBlur: return "渐进模糊"
         case .addNoise: return "添加杂色"
         case .vignette: return "暗角"
         case .bloomGlow: return "泛光/辉光"

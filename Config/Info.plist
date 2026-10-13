@@ -19,6 +19,8 @@
 				<string>public.heif</string>
 				<string>public.tiff</string>
 				<string>org.webmproject.webp</string>
+				<string>com.ilm.openexr-image</string>
+				<string>public.radiance</string>
 				<string>com.adobe.photoshop-image</string>
 				<string>com.adobe.photoshop-large-image</string>
 				<string>public.camera-raw-image</string>

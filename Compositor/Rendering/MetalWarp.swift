@@ -9,8 +9,12 @@ import Metal
     let width: Int
     let height: Int
     let texture: MTLTexture
+    /// The working copy's levels a channel: 255, or 65535 for a 16-bit layer's (`DeepLayer`), whose copy is 16-bit;
+    /// 0 for an HDR layer's, whose copy is half floats, kept as they come (nothing rounded, nothing clipped at white).
+    private let steps: Float
+    private let format: MTLPixelFormat
     private let renderer: GPUCanvasRenderer
-    /// Smudge: the color the brush carries, a (2r+1)² square, in 0…255.
+    /// Smudge: the color the brush carries, a (2r+1)² square, in 0…`steps`.
     private var carried: MTLTexture?
     /// Liquify: the layer as the stroke found it, and how far each pixel has moved from it — a source offset per
     /// pixel, in pixels. Each dab moves the offsets, never the pixels, and a pixel is drawn afresh from the untouched
@@ -26,7 +30,9 @@ import Metal
 
     init?(pixels: CGContext) {
         guard let renderer = GPUCanvasRenderer.shared, Self.pipelines != nil, let data = pixels.data else { return nil }
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: pixels.width,
+        let deep = pixels.bitsPerComponent == 16, hdr = pixels.bitmapInfo.contains(.floatComponents)
+        let format: MTLPixelFormat = hdr ? .rgba16Float : deep ? .rgba16Unorm : .rgba8Unorm
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: pixels.width,
                                                                   height: pixels.height, mipmapped: false)
         descriptor.usage = [.shaderRead, .shaderWrite]
         descriptor.storageMode = .shared
@@ -36,6 +42,8 @@ import Metal
                         withBytes: data, bytesPerRow: pixels.bytesPerRow)
         self.renderer = renderer
         self.texture = texture
+        self.format = format
+        steps = hdr ? 0 : deep ? 65535 : 255
         width = pixels.width
         height = pixels.height
     }
@@ -62,6 +70,7 @@ import Metal
         var hardness: Float
         var keep: Float
         var move: SIMD2<Float>
+        var steps: Float = 255
     }
 
     private func texture(_ current: MTLTexture?, side: Int, format: MTLPixelFormat) -> MTLTexture? {
@@ -74,12 +83,13 @@ import Metal
 
     private func dispatch(_ name: String, _ dab: Dab, textures: [MTLTexture], threads: Int) {
         guard let pipeline = Self.pipelines?[name] else { return }
+        var dab = dab
+        dab.steps = steps
         if encoder == nil {
             buffer = renderer.queue.makeCommandBuffer()
             encoder = buffer?.makeComputeCommandEncoder()
         }
         guard let encoder else { return }
-        var dab = dab
         // Each dab works on what the one before it left.
         encoder.memoryBarrier(scope: .textures)
         encoder.setComputePipelineState(pipeline)
@@ -131,7 +141,7 @@ import Metal
                         area: SIMD2(Int32(width), Int32(height)), inverseRadius: 0, hardness: 0, keep: 0, move: .zero)
         // The first push keeps the layer as it is, and starts every offset at nothing.
         if original == nil {
-            guard let original = sized(width: width, height: height, format: .rgba8Unorm),
+            guard let original = sized(width: width, height: height, format: format),
                   let offsets = sized(width: width, height: height, format: .rg32Float) else { return }
             self.original = original
             self.offsets = offsets
@@ -172,7 +182,7 @@ import Metal
 
     struct Dab {
         int2 center; int radius; int2 size; int2 origin; int2 area;
-        float inverseRadius; float hardness; float keep; float2 move;
+        float inverseRadius; float hardness; float keep; float2 move; float steps;
     };
 
     // How much a dab moves pixels at a distance u (0 center, 1 rim) from its center.
@@ -190,7 +200,7 @@ import Metal
         if (int(gid.x) >= side || int(gid.y) >= side) return;
         int2 p = d.center + int2(gid) - d.radius;
         bool inside = p.x >= 0 && p.y >= 0 && p.x < d.size.x && p.y < d.size.y;
-        carried.write(inside ? canvas.read(uint2(p)) * 255.0f : float4(0.0f), gid);
+        carried.write(inside ? canvas.read(uint2(p)) * max(d.steps, 1.0f) : float4(0.0f), gid);
     }
 
     kernel void warp_smudge(texture2d<float, access::read_write> canvas [[texture(0)]],
@@ -202,11 +212,11 @@ import Metal
         if (p.x < 0 || p.y < 0 || p.x >= d.size.x || p.y >= d.size.y) return;
         float w = weight(sqrt(float(offset.x * offset.x + offset.y * offset.y)) * d.inverseRadius, d.hardness);
         if (w <= 0.0f) return;
-        float4 under = canvas.read(uint2(p)) * 255.0f, held = carried.read(gid);
+        float4 under = canvas.read(uint2(p)) * max(d.steps, 1.0f), held = carried.read(gid);
         // What was under the brush at the last dab, laid down here at the smudge's strength; the brush then carries
         // what it just left, and nothing older (see WarpStroke.smudge).
         float4 painted = under + (held - under) * w * d.keep;
-        canvas.write(clamp(round(painted), 0.0f, 255.0f) / 255.0f, uint2(p));
+        canvas.write(d.steps > 0 ? clamp(round(painted), 0.0f, d.steps) / d.steps : painted, uint2(p));
         carried.write(painted, gid);
     }
 
@@ -255,7 +265,7 @@ import Metal
         float4 c00 = original.read(uint2(i)), c10 = original.read(uint2(i + int2(1, 0)));
         float4 c01 = original.read(uint2(i + int2(0, 1))), c11 = original.read(uint2(i + int2(1, 1)));
         float4 color = mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
-        canvas.write(clamp(round(color * 255.0f), 0.0f, 255.0f) / 255.0f, uint2(p));
+        canvas.write(d.steps > 0 ? clamp(round(color * d.steps), 0.0f, d.steps) / d.steps : color, uint2(p));
     }
     """
 }

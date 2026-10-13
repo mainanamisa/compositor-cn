@@ -86,8 +86,9 @@ nonisolated enum DistortWarp {
     /// `image`, shown through `transform`, resampled so its corners land on `corners`. Returns the
     /// warped pixels over the shape's whole-pixel bounds and the axis-aligned transform for them.
     /// `limit` caps the longest side for previews.
+    /// `sixteenBit`: a 16-bit layer's pixels, warped at 16 bits (`DeepLayer`).
     static func warp(_ image: CGImage, transform: LayerTransform, corners: [CGPoint], isMask: Bool,
-                     limit: CGFloat? = nil) throws -> (image: CGImage, transform: LayerTransform) {
+                     limit: CGFloat? = nil, sixteenBit: Bool = false) throws -> (image: CGImage, transform: LayerTransform) {
         guard isUsable(corners) else { throw ProjectError.invalid }
         let xs = corners.map(\.x), ys = corners.map(\.y)
         let minX = floor(xs.min()!), minY = floor(ys.min()!)
@@ -105,7 +106,7 @@ nonisolated enum DistortWarp {
         // each half is taken there on its own, as two triangles meeting along the shape's diagonal.
         if !isConvex(corners) {
             return (try warpFolded(image, target: target, bounds: bounds, factor: factor,
-                                   width: width, height: height, isMask: isMask), placed)
+                                   width: width, height: height, isMask: isMask, sixteenBit: sixteenBit), placed)
         }
         // Core Image measures y upward from the bottom of the output.
         func vector(_ point: CGPoint) -> CIVector {
@@ -115,14 +116,17 @@ nonisolated enum DistortWarp {
             "inputTopLeft": vector(target.topLeft), "inputTopRight": vector(target.topRight),
             "inputBottomRight": vector(target.bottomRight), "inputBottomLeft": vector(target.bottomLeft),
         ])
+        if sixteenBit, !isMask { return (try DeepLayer.render(warped, width: width, height: height, hdr: DeepLayer.isHDR(image)), placed) }
         return (try PixelAdjust.render(warped, width: width, height: height, isMask: isMask), placed)
     }
 
     /// The image drawn into a shape as two triangles: the halves either side of the diagonal, each taken there by
     /// its own affine map. Handles folded and dented shapes, which a perspective warp cannot.
     private static func warpFolded(_ image: CGImage, target: (topLeft: CGPoint, topRight: CGPoint, bottomRight: CGPoint, bottomLeft: CGPoint),
-                                   bounds: CGRect, factor: CGFloat, width: Int, height: Int, isMask: Bool) throws -> CGImage {
-        let context = try BrushRaster.context(width: width, height: height, mask: isMask)
+                                   bounds: CGRect, factor: CGFloat, width: Int, height: Int, isMask: Bool,
+                                   sixteenBit: Bool = false) throws -> CGImage {
+        let context = sixteenBit && !isMask ? try DeepLayer.context(width: width, height: height, hdr: DeepLayer.isHDR(image))
+                                            : try BrushRaster.context(width: width, height: height, mask: isMask)
         let source = CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height))
         let corners = (topLeft: CGPoint(x: source.minX, y: source.minY), topRight: CGPoint(x: source.maxX, y: source.minY),
                        bottomRight: CGPoint(x: source.maxX, y: source.maxY), bottomLeft: CGPoint(x: source.minX, y: source.maxY))
@@ -154,9 +158,9 @@ nonisolated enum DistortWarp {
     /// A full-resolution warp cropped to its visible pixels. A distorted shape rarely fills its
     /// bounding box — and a brush stroke never does — so the layer (and its transform handles)
     /// should hug what is actually there. `crop` is in the warp's pixels, for cropping a mask to match.
-    static func warpTrimmed(_ image: CGImage, transform: LayerTransform, corners: [CGPoint])
+    static func warpTrimmed(_ image: CGImage, transform: LayerTransform, corners: [CGPoint], sixteenBit: Bool = false)
         throws -> (image: CGImage, transform: LayerTransform, crop: CGRect) {
-        let warped = try warp(image, transform: transform, corners: corners, isMask: false)
+        let warped = try warp(image, transform: transform, corners: corners, isMask: false, sixteenBit: sixteenBit)
         let full = CGRect(x: 0, y: 0, width: warped.image.width, height: warped.image.height)
         let context = try BrushRaster.context(width: warped.image.width, height: warped.image.height, mask: false)
         BrushRaster.draw(warped.image, in: full, mask: false, context: context)
@@ -365,9 +369,12 @@ extension EditorSession {
 
     /// The layer at `index`, shown by `transform`, resampled so its corners land on `corners`.
     private func distort(at index: Int, transform: LayerTransform, corners: [CGPoint]) throws {
-        guard let layer = document?.layers[index], let image = layer.asset?.image else { return }
-        let warped = try DistortWarp.warpTrimmed(image, transform: transform, corners: corners)
-        let asset = ImportedImage(image: warped.image, thumbnail: try PixelAdjust.thumbnail(of: warped.image), name: layer.name)
+        guard let layer = document?.layers[index], let source = layer.asset else { return }
+        // A 16-bit layer is warped from its 16-bit pixels and stays 16-bit (`DeepLayer`).
+        let deep = try DeepLayer.flattened(source)
+        let warped = try DistortWarp.warpTrimmed(deep ?? source.image, transform: transform, corners: corners, sixteenBit: deep != nil)
+        let asset = deep == nil ? ImportedImage(image: warped.image, thumbnail: try PixelAdjust.thumbnail(of: warped.image), name: layer.name)
+                                : try DeepLayer.asset(warped.image, name: layer.name)
         var mask = layer.mask
         if let original = layer.mask, original.placement == nil, original.isLinked {
             let warpedMask = try DistortWarp.warp(original.asset.image, transform: transform, corners: corners, isMask: true)

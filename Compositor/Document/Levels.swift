@@ -109,6 +109,8 @@ final class LevelsEdit {
     let selection: SelectionClip?
     let mapping: CGAffineTransform
     let previewSource: CGImage
+    /// An HDR layer's pixels at `previewSource`'s size: its preview is made from them, as OK makes the result.
+    var hdrPreviewSource: CGImage?
     let previewMapping: CGAffineTransform
     var sampleMode: LevelsSample?
     var settings = LevelsSettings()
@@ -137,6 +139,7 @@ final class LevelsEdit {
             previewSource = image
             previewMapping = BrushRaster.pixelToDocument(transform, width: w, height: h)
         } else { previewSource = original.image; previewMapping = mapping }
+        hdrPreviewSource = try DeepLayer.hdrPreview(of: original, matching: previewSource)
     }
     func previewImage(for id: UUID) -> CGImage? { preview && id == layerID ? preparedPreview : nil }
     var previewJob: LevelsJob { LevelsJob(image: previewSource, settings: settings, selection: selection, mapping: previewMapping) }
@@ -178,8 +181,15 @@ extension EditorSession {
     private func renderLevelsPreview(_ edit: LevelsEdit) {
         guard levels === edit, edit.previewTask == nil, let job = edit.pending else { return }
         edit.pending = nil
+        let hdr = edit.hdrPreviewSource
         edit.previewTask = Task { @MainActor [weak self, weak edit] in
-            let result = await Task.detached(priority: .userInitiated) { try? LevelsFilter.run(job) }.value
+            let result = await Task.detached(priority: .userInitiated) { () -> CGImage? in
+                // An HDR layer, as OK makes it: highlights divided down to within white and multiplied back.
+                guard let hdr else { return try? LevelsFilter.run(job) }
+                return try? DeepLayer.dithered(DeepLayer.normalizing(hdr) { normal in
+                    try LevelsFilter.run(LevelsJob(image: normal, settings: job.settings, selection: job.selection, mapping: job.mapping))
+                })
+            }.value
             guard let self, let edit, self.levels === edit, !Task.isCancelled else { return }
             edit.previewTask = nil
             if edit.preview, !edit.settings.isIdentity { edit.preparedPreview = result; self.brushRevision += 1 }
@@ -201,8 +211,17 @@ extension EditorSession {
         isProjectBusy = true
         defer { levels = nil; isProjectBusy = false; brushRevision += 1 }
         let job = LevelsJob(image: edit.original.image, settings: edit.settings, selection: edit.selection, mapping: edit.mapping)
+        let deep: CGImage?
+        do { deep = try DeepLayer.flattened(edit.original) } catch { brushError = error.localizedDescription; return }
         do {
             let asset = try await Task.detached(priority: .userInitiated) {
+                // A 16-bit layer keeps its precision (`DeepLayer.run`).
+                if let deep {
+                    let result = try DeepLayer.run(deep) { half in
+                        try LevelsFilter.run(LevelsJob(image: half, settings: job.settings, selection: job.selection, mapping: job.mapping))
+                    }
+                    return try DeepLayer.asset(result, name: "Levels")
+                }
                 let image = try LevelsFilter.run(job)
                 return ImportedImage(image: image, thumbnail: try PixelAdjust.thumbnail(of: image), name: "Levels")
             }.value

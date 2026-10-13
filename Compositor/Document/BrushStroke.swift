@@ -159,12 +159,20 @@ final class BrushStroke {
     /// The part of `clone` each tile draws, cut once: drawing the whole sample into every tile the brush touched,
     /// a 25-megapixel image drawn dozens of times per mouse move, is what made big strokes crawl.
     private var clonePieces: [Int: (image: CGImage, placed: CGRect)] = [:]
+    /// The same sample at 16 bits, for a 16-bit layer (`DeepLayer`): the stroke's commit paints it into the layer's
+    /// 16-bit pixels through the same coverage, so Blur, Smudge and Liquify keep the layer's precision where they go.
+    var deepClone: (image: CGImage, placed: CGRect, inGrid: Bool)?
+    /// Makes part of `deepClone`'s image, as `cloneRender` does for `clone`'s.
+    var deepCloneRender: ((CGRect) -> CGImage?)?
     /// A Blur stroke: `clone` holds the layer blurred, painted in place through the tip.
     var isBlur = false
     /// The clone sample replaces what's under the tip rather than drawing over it, so it can also clear pixels.
     var replacesWithClone = false
     /// The undo name, when the stroke's kind doesn't say it.
     var editName: String?
+    /// The last drawing laid over the whole canvas (a gradient, a fill, a clear), in document coordinates, to draw again
+    /// into a 16-bit layer's 16-bit pixels when the edit is committed (`BrushCommit`), rather than taking its 8-bit tiles.
+    private var canvasPaint: (draw: (CGContext) throws -> Void, withinSource: Bool)?
     private var allocatedBounds: CGRect?
     private var previous: CGPoint?
     private var samples: [CGPoint] = []
@@ -507,25 +515,7 @@ final class BrushStroke {
                     // Clone Stamp: the sample, shifted by the source offset, painted through the coverage.
                     // Where the sample doesn't reach, there's nothing to paint.
                     if let piece = clonePiece(key, tile: tile.rect, clone: clone) {
-                        let context = tile.context
-                        context.saveGState()
-                        // Image masks draw bottom-up; flip so the coverage lines up with the tile.
-                        context.translateBy(x: 0, y: local.height)
-                        context.scaleBy(x: 1, y: -1)
-                        context.clip(to: local, mask: mask)
-                        context.scaleBy(x: 1, y: -1)
-                        context.translateBy(x: 0, y: -local.height)
-                        context.setAlpha(settings.opacity)
-                        if replacesWithClone { context.setBlendMode(.copy) }
-                        context.interpolationQuality = .medium
-                        // Into the space the sample lives in: the stroke's grid, or document coordinates.
-                        context.translateBy(x: -tile.rect.minX, y: -tile.rect.minY)
-                        if !clone.inGrid { context.concatenate(pixelToDocument.inverted()) }
-                        let placed = piece.placed
-                        context.translateBy(x: placed.minX, y: placed.maxY)
-                        context.scaleBy(x: 1, y: -1)
-                        context.draw(piece.image, in: CGRect(origin: .zero, size: placed.size))
-                        context.restoreGState()
+                        drawClone(piece, inGrid: clone.inGrid, coverage: mask, tile: tile.rect, in: tile.context)
                     }
                 } else if settings.healing, !isMask {
                     // While painting, the area to heal shows as a dark wash, as in Photoshop;
@@ -550,10 +540,41 @@ final class BrushStroke {
         }
     }
 
+    /// Paints a piece of a clone sample through a tile's coverage, into `context` set up in that tile's own pixels.
+    private func drawClone(_ piece: (image: CGImage, placed: CGRect), inGrid: Bool, coverage mask: CGImage, tile: CGRect,
+                           in context: CGContext) {
+        let local = CGRect(origin: .zero, size: tile.size)
+        context.saveGState()
+        // Image masks draw bottom-up; flip so the coverage lines up with the tile.
+        context.translateBy(x: 0, y: local.height)
+        context.scaleBy(x: 1, y: -1)
+        context.clip(to: local, mask: mask)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -local.height)
+        context.setAlpha(settings.opacity)
+        if replacesWithClone { context.setBlendMode(.copy) }
+        context.interpolationQuality = .medium
+        // Into the space the sample lives in: the stroke's grid, or document coordinates.
+        context.translateBy(x: -tile.minX, y: -tile.minY)
+        if !inGrid { context.concatenate(pixelToDocument.inverted()) }
+        let placed = piece.placed
+        context.translateBy(x: placed.minX, y: placed.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(piece.image, in: CGRect(origin: .zero, size: placed.size))
+        context.restoreGState()
+    }
+
     /// The part of the clone sample under a tile, with a couple of pixels' margin so it's resampled at its edges just as
     /// the whole sample was, and where that part sits. Nil when the sample doesn't reach the tile.
     private func clonePiece(_ key: Int, tile: CGRect, clone: (image: CGImage, placed: CGRect, inGrid: Bool)) -> (image: CGImage, placed: CGRect)? {
         if let piece = clonePieces[key] { return piece }
+        let piece = Self.piece(of: clone, render: cloneRender, tile: tile, pixelToDocument: pixelToDocument)
+        clonePieces[key] = piece
+        return piece
+    }
+
+    private static func piece(of clone: (image: CGImage, placed: CGRect, inGrid: Bool), render cloneRender: ((CGRect) -> CGImage?)?,
+                              tile: CGRect, pixelToDocument: CGAffineTransform) -> (image: CGImage, placed: CGRect)? {
         let placed = clone.placed
         guard placed.width > 0, placed.height > 0 else { return nil }
         let area = clone.inGrid ? tile : tile.applying(pixelToDocument)
@@ -564,10 +585,8 @@ final class BrushStroke {
             .intersection(CGRect(x: 0, y: 0, width: clone.image.width, height: clone.image.height))
         guard !pixels.isNull, !pixels.isEmpty,
               let image = cloneRender.map({ $0(pixels) }) ?? clone.image.cropping(to: pixels) else { return nil }
-        let piece = (image, CGRect(x: placed.minX + pixels.minX / scaleX, y: placed.minY + pixels.minY / scaleY,
-                                   width: pixels.width / scaleX, height: pixels.height / scaleY))
-        clonePieces[key] = piece
-        return piece
+        return (image, CGRect(x: placed.minX + pixels.minX / scaleX, y: placed.minY + pixels.minY / scaleY,
+                              width: pixels.width / scaleX, height: pixels.height / scaleY))
     }
 
     private static let eraseColor = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
@@ -722,7 +741,8 @@ final class BrushStroke {
     /// Runs `draw` in document coordinates over every tile the canvas and selection
     /// cover (only the layer's existing pixels with `withinSource`), clipped to both,
     /// starting from each tile's original content.
-    private func paintCanvas(withinSource: Bool = false, _ draw: (CGContext) throws -> Void) throws {
+    private func paintCanvas(withinSource: Bool = false, _ draw: @escaping (CGContext) throws -> Void) throws {
+        canvasPaint = (draw, withinSource)
         var area = canvas
         if let selectionClip { area = area.intersection(selectionClip.rect) }
         guard !area.isNull, !area.isEmpty else { return }
@@ -939,15 +959,63 @@ final class BrushStroke {
         let crop = isMask ? committedBounds : bounds ?? committedBounds
         let raster = RasterSnapshot.replacing(source: isMask ? layer.mask?.asset : layer.asset, sourceRect: sourceRect, patches: patches, crop: crop,
                                               isMask: isMask, fill: maskBackground)
+        if !isMask, let asset = layer.asset, deepClone != nil, let deep = try deepPainted(asset, crop: crop) {
+            return (try DeepLayer.asset(deep, name: layer.name), transform(for: crop), crop)
+        }
         let image = try raster.makeImage()
-        return (ImportedImage(image: image, thumbnail: try raster.thumbnail(), name: layer.name, raster: raster), transform(for: crop), crop)
+        // A 16-bit layer stays one: its 16-bit pixels are still this raster's base, with the strokes over them.
+        let source = isMask ? nil : layer.asset
+        let deep = source?.deep.flatMap { raster.base === (source?.raster?.base ?? source?.image) ? $0 : nil }
+        return (ImportedImage(image: image, thumbnail: try raster.thumbnail(), name: layer.name, raster: raster, deep: deep),
+                transform(for: crop), crop)
+    }
+
+    /// A clone stroke (Blur, Smudge, Liquify) on a 16-bit layer, at 16 bits: the layer's 16-bit pixels with `deepClone`
+    /// painted through each tile's coverage, as `publish` paints `clone` at 8, over `crop` of the stroke's grid.
+    private func deepPainted(_ asset: ImportedImage, crop: CGRect) throws -> CGImage? {
+        guard let deepClone, let deep = try DeepLayer.flattened(asset) else { return nil }
+        let wide = try DeepLayer.context(width: Int(crop.width), height: Int(crop.height), hdr: DeepLayer.isHDR(deep))
+        BrushRaster.draw(deep, in: sourceRect.offsetBy(dx: -crop.minX, dy: -crop.minY), mask: false, context: wide)
+        for (key, tile) in tiles {
+            guard let coverage = coverage[key], let mask = coverage.makeImage(),
+                  let piece = Self.piece(of: deepClone, render: deepCloneRender, tile: tile.rect, pixelToDocument: pixelToDocument)
+            else { continue }
+            wide.saveGState()
+            wide.translateBy(x: tile.rect.minX - crop.minX, y: tile.rect.minY - crop.minY)
+            wide.clip(to: CGRect(origin: .zero, size: tile.rect.size))
+            if let selectionClip {
+                wide.translateBy(x: -tile.rect.minX, y: -tile.rect.minY)
+                wide.concatenate(pixelToDocument.inverted())
+                selectionClip.apply(to: wide)
+                wide.concatenate(pixelToDocument)
+                wide.translateBy(x: tile.rect.minX, y: tile.rect.minY)
+            }
+            drawClone(piece, inGrid: deepClone.inGrid, coverage: mask, tile: tile.rect, in: wide)
+            wide.restoreGState()
+        }
+        return wide.makeImage()
     }
 
     func commitInput() -> BrushCommit.Input {
         let bounds = committedBounds
+        var deepPaint: ((CGContext) throws -> Void)?
+        if let canvasPaint, !isMask {
+            // As `paintCanvas` draws it into each tile, into the whole committed area at once.
+            let inverse = pixelToDocument.inverted(), canvas = canvas, selectionClip = selectionClip
+            let within = canvasPaint.withinSource ? sourceRect.offsetBy(dx: -bounds.minX, dy: -bounds.minY) : nil
+            deepPaint = { context in
+                if let within { context.clip(to: within) }
+                context.translateBy(x: -bounds.minX, y: -bounds.minY)
+                context.concatenate(inverse)
+                context.clip(to: canvas)
+                selectionClip?.apply(to: context)
+                try canvasPaint.draw(context)
+            }
+        }
         return BrushCommit.Input(width: Int(bounds.width), height: Int(bounds.height), source: source,
             patches: patches.map { BrushPatch(rect: $0.rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY), image: $0.image) },
-            mask: isMask, name: layer.name, sourceRect: sourceRect.offsetBy(dx: -bounds.minX, dy: -bounds.minY), fill: maskBackground)
+            mask: isMask, name: layer.name, sourceRect: sourceRect.offsetBy(dx: -bounds.minX, dy: -bounds.minY), fill: maskBackground,
+            deepSource: isMask || layer.asset?.deep == nil ? nil : layer.asset, deepPaint: deepPaint)
     }
 }
 
@@ -962,6 +1030,11 @@ actor BrushCommit {
         let sourceRect: CGRect
         /// A mask's background: what a grown mask is where neither its old pixels nor the edit reach.
         var fill: CGFloat = 1
+        /// A 16-bit layer's asset (`source` is its 8-bit copy): the edit is laid onto its 16-bit pixels, so the layer stays 16-bit.
+        var deepSource: ImportedImage?
+        /// The edit's drawing, when it's one drawing over the canvas (a gradient, a fill), to draw again at 16 bits
+        /// into `deepSource`'s 16-bit pixels, set up for the committed area.
+        var deepPaint: ((CGContext) throws -> Void)?
     }
     nonisolated struct Output: @unchecked Sendable {
         let asset: ImportedImage
@@ -1008,11 +1081,46 @@ actor BrushCommit {
             guard let result = tight.makeImage() else { throw ExportError.render }
             image = result
         }
+        if let layer = input.deepSource, let deep = try sixteenBit(layer, painted: context, input: input)?.cropping(to: crop) {
+            return Output(asset: try DeepLayer.asset(deep, name: input.name), pixelBounds: crop)
+        }
         let factor = min(1, 96 / CGFloat(max(image.width, image.height)))
         let width = max(1, Int(CGFloat(image.width) * factor)), height = max(1, Int(CGFloat(image.height) * factor))
         let thumb = try BrushRaster.context(width: width, height: height, mask: false)
         BrushRaster.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height), mask: false, context: thumb)
         guard let thumbnail = thumb.makeImage() else { throw ExportError.render }
         return Output(asset: ImportedImage(image: image, thumbnail: thumbnail, name: input.name), pixelBounds: crop)
+    }
+
+    /// The edit at 16 bits: the layer's 16-bit pixels, taking the edit's value wherever it changed the 8-bit ones
+    /// (`painted`, the source with the patches over it), as `DeepLayer.flattened` does for strokes.
+    private func sixteenBit(_ layer: ImportedImage, painted: CGContext, input: Input) throws -> CGImage? {
+        guard let deep = try DeepLayer.flattened(layer) else { return nil }
+        let hdr = DeepLayer.isHDR(deep)
+        let wide = try DeepLayer.context(width: input.width, height: input.height, hdr: hdr)
+        BrushRaster.draw(deep, in: input.sourceRect, mask: false, context: wide)
+        // A gradient or fill drawn again at 16 bits, smooth where its 8-bit tiles would step.
+        if let deepPaint = input.deepPaint {
+            wide.saveGState()
+            try deepPaint(wide)
+            wide.restoreGState()
+            return wide.makeImage()
+        }
+        let unpainted = try BrushRaster.context(width: input.width, height: input.height, mask: false)
+        if let source = input.source { BrushRaster.draw(source, in: input.sourceRect, mask: false, context: unpainted) }
+        guard let wideData = wide.data, let paintedData = painted.data, let unpaintedData = unpainted.data,
+              painted.bytesPerRow == unpainted.bytesPerRow else { throw ExportError.render }
+        // Held to the end of the call: optimized, Swift may free a context right after its last use, its `data`.
+        withExtendedLifetime(unpainted) {
+            let paintedBytes = paintedData.assumingMemoryBound(to: UInt8.self), unpaintedBytes = unpaintedData.assumingMemoryBound(to: UInt8.self)
+            if hdr {
+                deep_take_painted_hdr(wideData.assumingMemoryBound(to: UInt16.self), wide.bytesPerRow, paintedBytes, unpaintedBytes,
+                                      painted.bytesPerRow, input.width, input.height)
+            } else {
+                deep_take_painted(wideData.assumingMemoryBound(to: UInt16.self), wide.bytesPerRow, paintedBytes, unpaintedBytes,
+                                  painted.bytesPerRow, input.width, input.height)
+            }
+        }
+        return wide.makeImage()
     }
 }

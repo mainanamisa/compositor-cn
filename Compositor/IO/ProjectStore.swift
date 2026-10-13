@@ -7,12 +7,17 @@ extension UTType {
     static let compositorProject = UTType(exportedAs: "com.compositor.project", conformingTo: .package)
     nonisolated static let photoshopImage = UTType(importedAs: "com.adobe.photoshop-image")
     nonisolated static let photoshopLargeImage = UTType(importedAs: "com.adobe.photoshop-large-image")
-    static let importableImages: [UTType] = [.jpeg, .png, .heic, .heif, .tiff, .webP, .photoshopImage, .photoshopLargeImage, .rawImage, .svg]
+    static let importableImages: [UTType] = [.jpeg, .png, .heic, .heif, .tiff, .webP, .openEXR, .radianceHDR, .photoshopImage,
+                                             .photoshopLargeImage, .rawImage, .svg]
+    /// OpenEXR, the format renders (Blender's among them) keep light brighter than white in.
+    static let openEXR = UTType("com.ilm.openexr-image") ?? .image
+    /// Radiance HDR (.hdr), the usual format for HDRI panoramas.
+    static let radianceHDR = UTType("public.radiance") ?? .image
 }
 
 nonisolated struct ProjectManifest: Codable, Sendable {
     /// The format version new saves write.
-    static let current = 11
+    static let current = 13
     /// Every version `load` accepts. The package-header check, the manifest check and the error
     /// message all read this, so they cannot drift apart when `current` is bumped.
     static let supported = 1...ProjectManifest.current
@@ -95,10 +100,13 @@ actor ProjectStore {
             } else { try checkSize(width: asset.image.width, height: asset.image.height, used: &pixels) }
             let data = try autoreleasepool {
                 let data = NSMutableData()
-                guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+                // An HDR layer saves as OpenEXR, which keeps light brighter than white (`ImportedImage.file(for:)`).
+                let type = !isMask && filename.hasSuffix(".exr") ? UTType.openEXR : .png
+                guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else {
                     throw ProjectError.encode
                 }
-                CGImageDestinationAddImage(destination, asset.image, nil)
+                // A 16-bit or HDR layer saves its full pixels; `image` is only their dithered copy.
+                CGImageDestinationAddImage(destination, isMask ? asset.image : try DeepLayer.flattened(asset) ?? asset.image, nil)
                 guard CGImageDestinationFinalize(destination) else { throw ProjectError.encode }
                 return data as Data
             }
@@ -170,13 +178,18 @@ actor ProjectStore {
                 // to it, and the next save replaces that file (ImageIO: "mmapped file changed"), so an image kept for undo
                 // could later read someone else's pixels.
                 let bytes = try Data(contentsOf: file)
-                guard let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-                      CGImageSourceGetType(source) as String? == UTType.png.identifier,
+                // An HDR layer's EXR from version 13; masks are always PNG.
+                let exr = !isMask && filename.hasSuffix(".exr")
+                guard !exr || manifest.version >= 13,
+                      let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                      CGImageSourceGetType(source) as String? == (exr ? UTType.openEXR : .png).identifier,
                       CGImageSourceGetCount(source) == 1,
                       let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
                       let width = properties[kCGImagePropertyPixelWidth] as? Int,
                       let height = properties[kCGImagePropertyPixelHeight] as? Int,
-                      (properties[kCGImagePropertyDepth] as? Int ?? 8) <= 8 else { throw ProjectError.missingImage }
+                      // 16-bit layer images from version 12; masks stay 8-bit.
+                      case let depth = properties[kCGImagePropertyDepth] as? Int ?? 8,
+                      exr || depth <= 8 || (depth == 16 && !isMask && manifest.version >= 12) else { throw ProjectError.missingImage }
                 if isMask { try checkSize(width: width, height: height, used: &maskPixels) }
                 else { try checkSize(width: width, height: height, used: &pixels) }
                 guard let image = CGImageSourceCreateImageAtIndex(source, 0,
@@ -187,6 +200,8 @@ actor ProjectStore {
                         kCGImageSourceShouldCacheImmediately: true
                       ] as CFDictionary) else { throw ProjectError.missingImage }
                 if isMask, !LayerMask.isValid(image) { throw ProjectError.invalid }
+                if exr { return try DeepLayer.wideAsset(image, name: layer.name) }
+                if depth == 16 { return try DeepLayer.asset(image, name: layer.name) }
                 return ImportedImage(image: image, thumbnail: thumbnail, name: layer.name)
             }
             if isMask { masks[layer.id] = asset } else { images[layer.id] = asset }
@@ -240,7 +255,8 @@ actor ProjectStore {
             guard ids.insert(layer.id).inserted, layer.transform.isValid,
                   !layer.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   layer.name.utf8.count <= 16_384,
-                  layer.imageFile == nil || layer.imageFile == "\(layer.id.uuidString).png" else { throw ProjectError.invalid }
+                  layer.imageFile == nil || layer.imageFile == "\(layer.id.uuidString).png"
+                    || (manifest.version >= 13 && layer.imageFile == "\(layer.id.uuidString).exr") else { throw ProjectError.invalid }
         }
         if let id = manifest.activeLayerID, !ids.contains(id) { throw ProjectError.invalid }
         try validateGuides(manifest)

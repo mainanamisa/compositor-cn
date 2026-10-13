@@ -35,13 +35,15 @@ nonisolated enum PixelAdjust {
 
     /// coverage × adjusted + (1 − coverage) × original, in float without color conversion,
     /// so fully selected pixels stay exact and soft edges blend.
+    /// `sixteenBit`: 16-bit images, blended at 16 bits (`DeepLayer`).
     static func blend(_ adjusted: CGImage, over original: CGImage, through selection: SelectionClip,
-                      pixelToDocument: CGAffineTransform, isMask: Bool) throws -> CGImage {
+                      pixelToDocument: CGAffineTransform, isMask: Bool, sixteenBit: Bool = false) throws -> CGImage {
         let width = adjusted.width, height = adjusted.height
         let mask = try coverage(selection, width: width, height: height, pixelToDocument: pixelToDocument)
         let blended = CIImage(cgImage: adjusted).applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: CIImage(cgImage: original),
             kCIInputMaskImageKey: CIImage(cgImage: mask)])
+        if sixteenBit { return try DeepLayer.render(blended, width: width, height: height, hdr: DeepLayer.isHDR(adjusted)) }
         return try render(blended, width: width, height: height, isMask: isMask)
     }
 

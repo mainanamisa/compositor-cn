@@ -230,4 +230,61 @@ struct ImageImportTests {
         #expect(session.importError == nil, "\(session.importError ?? "")")
         #expect(session.document?.layers.count == 1 && session.document?.width == 64)
     }
+
+    /// A 16-bit PNG of a gentle gray gradient, four 8-bit steps across 256 pixels, at `alpha`.
+    private func gentleGradient16(alpha: Double = 1) throws -> URL {
+        let width = 256, height = 64
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 16, bytesPerRow: width * 8,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue))
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt16.self)
+        for y in 0..<height {
+            for x in 0..<width {
+                let level = (100 + 4 * Double(x) / Double(width - 1)) / 255 * alpha
+                let value = UInt16((level * 65535).rounded()), a = UInt16((alpha * 65535).rounded())
+                let i = (y * width + x) * 4
+                pixels[i] = value; pixels[i + 1] = value; pixels[i + 2] = value; pixels[i + 3] = a
+            }
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return url
+    }
+
+    /// A 16-bit gradient comes in dithered rather than rounded straight down: averaged down each column, it follows
+    /// the real gradient, where plain rounding would leave flat bands up to half a step out.
+    @Test func sixteenBitImagesAreDitheredNotBanded() async throws {
+        let url = try gentleGradient16()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let image = try await ImageImporter.shared.decode(url).image
+        #expect(image.width == 256 && image.height == 64)
+        let read = try #require(CGContext(data: nil, width: 256, height: 64, bitsPerComponent: 8, bytesPerRow: 1024,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+        read.draw(image, in: CGRect(x: 0, y: 0, width: 256, height: 64))
+        let bytes = try #require(read.data).assumingMemoryBound(to: UInt8.self)
+        var worst = 0.0
+        for x in 0..<256 {
+            let mean = (0..<64).reduce(0.0) { $0 + Double(bytes[($1 * 256 + x) * 4]) } / 64
+            worst = max(worst, abs(mean - (100 + 4 * Double(x) / 255)))
+        }
+        #expect(worst < 0.25, "columns follow the 16-bit gradient: worst \(worst) of a step off")
+        #expect((0..<(256 * 64)).allSatisfy { bytes[$0 * 4 + 3] == 255 })
+    }
+
+    /// Premultiplied: the dither never lifts a color past its own alpha.
+    @Test func ditheredSixteenBitKeepsColorWithinAlpha() async throws {
+        let url = try gentleGradient16(alpha: 0.5)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let image = try await ImageImporter.shared.decode(url).image
+        let read = try #require(CGContext(data: nil, width: 256, height: 64, bitsPerComponent: 8, bytesPerRow: 1024,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+        read.draw(image, in: CGRect(x: 0, y: 0, width: 256, height: 64))
+        let bytes = try #require(read.data).assumingMemoryBound(to: UInt8.self)
+        #expect((0..<(256 * 64)).allSatisfy { p in (0..<3).allSatisfy { bytes[p * 4 + $0] <= bytes[p * 4 + 3] } })
+        #expect(abs(Int(bytes[3]) - 128) <= 1)
+    }
 }

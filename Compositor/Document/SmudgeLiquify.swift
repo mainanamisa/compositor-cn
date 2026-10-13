@@ -24,7 +24,7 @@ final class WarpStroke {
     let strength: CGFloat
     let width: Int
     let height: Int
-    let context: CGContext
+    private(set) var context: CGContext
     private let pixels: UnsafeMutablePointer<UInt8>
     /// Every dab's center, for painting the result into the layer.
     private(set) var points: [CGPoint] = []
@@ -45,20 +45,35 @@ final class WarpStroke {
     private var carried: [Float] = []
     private var scratch: [Float] = []
 
-    init(layer: ImageLayer, image: CGImage, transform: LayerTransform, canvas: CGSize, mode: BlurToolMode, settings: BrushSettings,
-         useGPU: Bool = true) throws {
+    /// `deep`: a 16-bit layer's 16-bit pixels (`DeepLayer`). With the GPU the working copy is then 16-bit too, so the
+    /// stroke keeps the layer's precision; the CPU dabs work at 8 bits.
+    init(layer: ImageLayer, image: CGImage, deep: CGImage? = nil, transform: LayerTransform, canvas: CGSize, mode: BlurToolMode,
+         settings: BrushSettings, useGPU: Bool = true) throws {
         self.layer = layer
         self.mode = mode
         diameter = max(2, settings.diameter)
         hardness = min(0.98, max(0, settings.hardness))
         strength = min(1, max(0.01, settings.opacity))
         width = Int(canvas.width); height = Int(canvas.height)
-        context = try BrushRaster.context(width: width, height: height, mask: false)
-        LayerRenderer.draw(image, transform: transform, center: transform.center, in: context)
+        var gpu: MetalWarp?
+        if useGPU, let deep, MetalWarp.pipelines != nil {
+            let wide = try DeepLayer.context(width: width, height: height, hdr: DeepLayer.isHDR(deep))
+            LayerRenderer.draw(deep, transform: transform, center: transform.center, in: wide)
+            gpu = MetalWarp(pixels: wide)
+            context = wide
+        } else {
+            context = try BrushRaster.context(width: width, height: height, mask: false)
+            LayerRenderer.draw(image, transform: transform, center: transform.center, in: context)
+            if useGPU { gpu = MetalWarp(pixels: context) }
+        }
+        if gpu == nil, context.bitsPerComponent != 8 {
+            context = try BrushRaster.context(width: width, height: height, mask: false)
+            LayerRenderer.draw(image, transform: transform, center: transform.center, in: context)
+        }
+        self.gpu = gpu
         guard let data = context.data else { throw ExportError.render }
-        // Top-left rows: a document point's row is its y.
+        // Top-left rows: a document point's row is its y. Only the CPU dabs use these, on an 8-bit copy.
         pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
-        gpu = useGPU ? MetalWarp(pixels: context) : nil
         cpuImage = context.makeImage()
     }
 
@@ -204,7 +219,8 @@ extension EditorSession {
         }
         finishOpacityEdit()
         do {
-            let stroke = try WarpStroke(layer: layer, image: image, transform: displayedTransform(for: layer),
+            let stroke = try WarpStroke(layer: layer, image: image, deep: try layer.asset.flatMap { try DeepLayer.flattened($0) },
+                                        transform: displayedTransform(for: layer),
                                         canvas: document.size, mode: blurMode, settings: brushSettings)
             stroke.append(point)
             warpStroke = stroke
@@ -229,6 +245,8 @@ extension EditorSession {
             settings.opacity = 1
             let stroke = try makeRasterEdit(for: current, settings: settings)
             stroke.clone = (result, CGRect(x: 0, y: 0, width: result.width, height: result.height), false)
+            // A 16-bit working copy goes into the layer's 16-bit pixels.
+            if result.bitsPerComponent == 16 { stroke.deepClone = stroke.clone }
             stroke.replacesWithClone = true
             stroke.editName = warp.mode.rawValue
             // The tip is solid and a little wider than the brush, so a point every twentieth of its width covers what

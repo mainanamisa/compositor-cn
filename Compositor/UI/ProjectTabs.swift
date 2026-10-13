@@ -55,6 +55,8 @@ struct ProjectTabStrip: View {
     private let dragTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     /// The "New" drop slot's own natural width, measured once it appears.
     @State private var dropSlotWidth: CGFloat = 0
+    /// A drag over the bar is headed for a new project: over the "New" slot or anywhere on the bar that isn't a tab.
+    @State private var newTargeted = false
     /// A tab being reordered by drag, if any.
     @State private var reorder: TabReorderState?
     /// Mirrors the width `GeometryReader` offers `body`, for gesture handlers — they run outside a body
@@ -94,6 +96,10 @@ struct ProjectTabStrip: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(height: 34, alignment: .leading)
+            // The whole bar opens a drop in a new project, not just the small "New" slot; a tab, under the pointer,
+            // takes the drop itself.
+            .onDrop(of: [UTType.fileURL.identifier, UTType.image.identifier, ProjectWorkspace.layerType], delegate:
+                ProjectTabDropDelegate(workspace: workspace, destination: nil, targeted: $newTargeted))
             .onAppear { slotWidth = proxy.size.width }
             .onChange(of: proxy.size.width) { _, new in slotWidth = new }
         }
@@ -109,7 +115,7 @@ struct ProjectTabStrip: View {
             }
             ForEach(layout.visible) { slot in tabView(for: slot, contentWidth: contentWidth) }
             if dragging {
-                NewTabDropSlot(workspace: workspace)
+                NewTabDropSlot(workspace: workspace, targeted: $newTargeted)
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { dropSlotWidth = $0 }
                     .offset(x: layout.contentWidth + projectTabSpacing, y: 3)
             }
@@ -244,7 +250,8 @@ private struct TitleBarDragArea: NSViewRepresentable {
 
 private struct NewTabDropSlot: View {
     let workspace: ProjectWorkspace
-    @State private var targeted = false
+    /// Shared with the bar around it, which takes the same drop, so the slot lights up wherever on the bar it's headed.
+    @Binding var targeted: Bool
     var body: some View {
         Label("新建", systemImage: "plus")
             .font(.system(size: 12, weight: .medium))

@@ -103,6 +103,8 @@ final class CanvasView: NSView {
     private var samplingColor = false
     private enum GradientHandle { case start, end }
     private var gradientDrag: GradientHandle?
+    /// The end of Progressive Blur's line being dragged, while its panel is open.
+    private var progressiveDrag: GradientHandle?
     private var antsTimer: Timer?
     private var modifierMonitor: Any?
     private var sampleClickMonitor: Any?
@@ -1769,6 +1771,10 @@ final class CanvasView: NSView {
             session.beginCameraRawDrag(at: session.viewport.documentPoint(from: point, documentSize: document.size))
             return
         }
+        if session.filterEdit?.kind == .progressiveBlur, !spaceHeld {
+            beginProgressiveDrag(at: point)
+            return
+        }
         if session.levels?.sampleMode != nil, !spaceHeld, let document = session.document {
             session.sampleLevels(at: session.viewport.documentPoint(from: point, documentSize: document.size))
             FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("levelsPanel"))
@@ -1860,6 +1866,15 @@ final class CanvasView: NSView {
         }
         if session.filterEdit?.cameraRawDrag != nil, let document = session.document {
             session.dragCameraRaw(to: session.viewport.documentPoint(from: point, documentSize: document.size))
+            return
+        }
+        if let handle = progressiveDrag, let settings = session.filterEdit?.settings, let document = session.document {
+            var pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
+            if event.modifierFlags.contains(.shift), let anchor = handle == .start ? settings.progressiveEnd : settings.progressiveStart {
+                pixel = Self.snapped(pixel, around: anchor)
+            }
+            session.moveProgressiveBlur(start: handle == .start ? pixel : nil, end: handle == .end ? pixel : nil)
+            synchronizeDisplay()
             return
         }
         if textBoxAnchor != nil { dragTextGesture(to: point); return }
@@ -2048,6 +2063,12 @@ final class CanvasView: NSView {
         window?.invalidateCursorRects(for: self)
     }
     override func mouseUp(with event: NSEvent) {
+        if progressiveDrag != nil {
+            progressiveDrag = nil
+            // The panel keeps the keyboard, for Return and Escape.
+            FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("filterPanel"))
+            return
+        }
         if session.filterEdit?.cameraRawGuideDraft != nil {
             session.commitCameraRawGeometryGuide()
         }
@@ -2439,6 +2460,19 @@ final class CanvasView: NSView {
         }
     }
 
+    /// Progressive Blur: grabs an end of its line, or starts a new one at the pointer, sharp there.
+    private func beginProgressiveDrag(at point: CGPoint) {
+        guard let document = session.document else { return }
+        if let line = transformOverlay.progressiveLine {
+            if hypot(point.x - line.end.x, point.y - line.end.y) <= 10 { progressiveDrag = .end; return }
+            if hypot(point.x - line.start.x, point.y - line.start.y) <= 10 { progressiveDrag = .start; return }
+        }
+        let pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
+        session.moveProgressiveBlur(start: pixel, end: pixel)
+        progressiveDrag = .end
+        synchronizeDisplay()
+    }
+
     /// Grabs an existing endpoint, or starts a new line at the pointer.
     private func beginGradientDrag(at point: CGPoint) {
         guard let document = session.document else { return }
@@ -2617,7 +2651,8 @@ extension CanvasView {
             return hideGPUView(dirtyRect)
         }
         if view.isHidden { view.isHidden = false }
-        renderer.present(frame, in: view.metalLayer)
+        // A 16-bit or HDR layer has tones between the screen's 8-bit levels: dithered on the way, not rounded into bands.
+        renderer.present(frame, in: view.metalLayer, dither: document.layers.contains { $0.asset?.deep != nil })
         return true
     }
 
@@ -2698,7 +2733,19 @@ extension CanvasView {
         let placement = GPUPlacement(mapping: crisp ? .identity : mapping, scale: crisp ? 1 : perPixel, renderer: renderer)
         guard var layers = gpuLayers(document, placement: placement) else { return nil }
         if crisp { layers = layers.cropped(to: pixels).samplingNearest().transformed(by: mapping) }
-        frame = layers.cropped(to: rect).composited(over: frame)
+        var picture = layers.cropped(to: rect)
+        // Proof Colors: on white paper, through the CMYK profile and back, as printing would give it; Gamut Warning: what
+        // it can't print as it is, gray, over the proof or the document's own colors (`CMYK`).
+        if session.proofsColors || session.showsGamutWarning, let profile = session.proofProfile,
+           let lookups = CMYK.proofLookups(profile) {
+            let lookup = session.proofsColors ? session.showsGamutWarning ? lookups.warning : lookups.proof : lookups.marked
+            picture = picture.composited(over: gray(1).cropped(to: rect)).applyingFilter("CIColorCubeWithColorSpace", parameters: [
+                "inputCubeDimension": CMYK.dimension,
+                "inputCubeData": lookup,
+                "inputColorSpace": CGColorSpace(name: CGColorSpace.sRGB)!,
+            ])
+        }
+        frame = picture.composited(over: frame)
         // The document's edge: a one-pixel line centered on it.
         let edge = gray(1, alpha: 0.13)
         for line in [CGRect(x: rect.minX - 0.5, y: rect.minY - 0.5, width: rect.width + 1, height: 1),
@@ -2717,6 +2764,8 @@ extension CanvasView {
         session.effectsPreviews.prepare(layers: document.layers)
         let byID = Dictionary(uniqueKeysWithValues: document.layers.map { ($0.id, $0) })
         let ids = document.renderLayers.map(\.id)
+        // With an HDR layer, what an adjustment works on may be brighter than white (`GPUAdjustment.apply`).
+        let hasHDR = document.layers.contains { $0.asset?.isHDR == true }
         // Clipping stacks, as `LiveMaskRenderer.prepareStacks` finds them.
         var stacks: [UUID: [UUID]] = [:], stacked = Set<UUID>()
         for (index, base) in ids.enumerated() where byID[base]?.maskSourceID == nil && byID[base]?.adjustment == nil {
@@ -3019,6 +3068,12 @@ extension CanvasView {
             let placed: CIImage?
             if let shaped = session.shapeTransformPreview(for: layer, transform: transform) {
                 placed = placement.place(shaped, transform: transform)
+            } else if let asset = layer.asset, session.hueSaturation?.previewImage(for: layer.id) == nil,
+                      session.levels?.previewImage(for: layer.id) == nil, session.filterEdit?.previewImage(for: layer.id) == nil,
+                      let full = DeepLayer.canvasImage(asset) {
+                // A 16-bit or HDR layer from its own pixels, so an adjustment over it previews as it will export: smooth,
+                // and bringing HDR highlights into view. The screen still shows anything brighter than white as white.
+                placed = placement.place(full, transform: transform)
             } else if let raster = layer.asset?.raster, session.hueSaturation?.previewImage(for: layer.id) == nil,
                       session.levels?.previewImage(for: layer.id) == nil, session.filterEdit?.previewImage(for: layer.id) == nil {
                 placed = placement.place(raster, transform: transform)
@@ -3035,7 +3090,8 @@ extension CanvasView {
         }
         // An adjustment re-colors what's under it, through its own mask and its folders' masks, at its opacity.
         func adjusted(_ below: CIImage, by layer: ImageLayer, adjustment: LayerAdjustment, folders: Bool) -> CIImage? {
-            guard var changed = GPUAdjustment.apply(adjustment, to: below, scale: placement.scale, mapping: placement.mapping)
+            guard var changed = GPUAdjustment.apply(adjustment, to: below, scale: placement.scale, mapping: placement.mapping,
+                                                    hdr: hasHDR)
             else { return nil }
             // In a blend mode, the adjusted colors blend with the ones under them at full coverage, and the original
             // coverage comes back after — as LiveMaskRenderer does, so soft edges aren't thickened.

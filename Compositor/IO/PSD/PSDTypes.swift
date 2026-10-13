@@ -8,8 +8,8 @@ nonisolated enum PSDError: LocalizedError, Equatable {
         switch self {
         case .truncated: "无法读取该 Photoshop 文件，它可能已损坏或不完整"
         case .unsupportedVersion: "此 Photoshop 文件使用了 Compositor 无法读取的格式版本"
-        case .unsupportedColorMode: "只能导入 8 位 RGB 的 Photoshop 文件"
-        case .unsupportedDepth: "只能导入 8 位 RGB 的 Photoshop 文件"
+        case .unsupportedColorMode: "只能导入 8 位 RGB 或 CMYK 的 Photoshop 文件"
+        case .unsupportedDepth: "只能导入 8 位 RGB 或 CMYK 的 Photoshop 文件"
         case .unsupportedCompression: "此 Photoshop 文件使用了不支持的图层压缩方式"
         }
     }
@@ -30,6 +30,8 @@ nonisolated struct PSDDocument: @unchecked Sendable {
     var width: Int
     var height: Int
     var resolution: Double
+    /// A CMYK file's profile, which its layers were converted to RGB through; nil for an RGB file.
+    var cmykProfile: CMYKProfile?
     /// Bottom to top, including folders. Hidden section dividers are not stored.
     var layers: [PSDRecord]
 }

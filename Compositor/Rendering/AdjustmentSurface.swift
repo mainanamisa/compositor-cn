@@ -1,7 +1,7 @@
 import CoreGraphics
 
 nonisolated enum AdjustmentSurface {
-    static func draw(in context: CGContext, padding: CGFloat = 0, body: (CGContext) -> Void) {
+    static func draw(in context: CGContext, padding: CGFloat = 0, sixteenBit: Bool = false, hdr: Bool = false, body: (CGContext) -> Void) {
         // Spatial adjustments need pixels outside AppKit's dirty rectangle. Render that halo
         // offscreen; the destination context still clips the final draw to the requested region.
         let output = context.boundingBoxOfClipPath.integral
@@ -12,8 +12,8 @@ nonisolated enum AdjustmentSurface {
         let device = LayerRenderer.deviceScale(of: context)
         let scale = bounds.width * bounds.height * device * device <= DocumentLimits.maxSurfaceExtent ? device : 1
         guard bounds.width * bounds.height <= DocumentLimits.maxSurfaceExtent,
-              let surface = try? BrushRaster.context(width: Int((bounds.width * scale).rounded()),
-                                                     height: Int((bounds.height * scale).rounded()), mask: false) else { return }
+              let surface = try? surface(sixteenBit: sixteenBit, hdr: hdr, width: Int((bounds.width * scale).rounded()),
+                                         height: Int((bounds.height * scale).rounded())) else { return }
         surface.scaleBy(x: scale, y: scale)
         surface.translateBy(x: -bounds.minX, y: -bounds.minY)
         body(surface)
@@ -24,5 +24,11 @@ nonisolated enum AdjustmentSurface {
         context.scaleBy(x: 1, y: -1)
         context.draw(image, in: CGRect(origin: .zero, size: bounds.size))
         context.restoreGState()
+    }
+
+    /// A 16-bit render (`sixteenBit`) keeps 16 bits through the surface.
+    private static func surface(sixteenBit: Bool, hdr: Bool, width: Int, height: Int) throws -> CGContext {
+        sixteenBit ? try DeepLayer.context(width: width, height: height, hdr: hdr)
+                                       : try BrushRaster.context(width: width, height: height, mask: false)
     }
 }

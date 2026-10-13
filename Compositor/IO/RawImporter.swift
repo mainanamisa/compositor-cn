@@ -69,8 +69,9 @@ nonisolated enum RawImporter {
         static let shared = Queue()
         private var cached: (url: URL, limit: CGFloat, filter: CIRAWFilter)?
 
-        func develop(_ url: URL, settings: RawDevelopSettings, limit: CGFloat?) -> CGImage? {
-            guard let limit else { return try? RawImporter.develop(url, settings: settings, limit: nil) }
+        /// `sixteenBit`: the full frame at 16 bits a channel, for a 16-bit layer (`DeepLayer`); otherwise dithered to 8.
+        func develop(_ url: URL, settings: RawDevelopSettings, limit: CGFloat?, sixteenBit: Bool = false) -> CGImage? {
+            guard let limit else { return try? RawImporter.develop(url, settings: settings, limit: nil, sixteenBit: sixteenBit) }
             let filter: CIRAWFilter
             if let cached, cached.url == url, cached.limit == limit {
                 filter = cached.filter
@@ -119,7 +120,7 @@ nonisolated enum RawImporter {
 
     /// The developed image. `limit` caps the long edge for the preview the sheet shows while the
     /// sliders move; the import itself passes nil and gets the full frame.
-    static func develop(_ url: URL, settings: RawDevelopSettings, limit: CGFloat? = nil) throws -> CGImage {
+    static func develop(_ url: URL, settings: RawDevelopSettings, limit: CGFloat? = nil, sixteenBit: Bool = false) throws -> CGImage {
         guard let filter = CIRAWFilter(imageURL: url) else { throw ImageImportError.unreadable }
         if let limit {
             let size = filter.nativeSize
@@ -129,12 +130,12 @@ nonisolated enum RawImporter {
                 filter.isDraftModeEnabled = true
             }
         }
-        guard let image = render(filter, settings: settings) else { throw ImageImportError.unreadable }
+        guard let image = render(filter, settings: settings, sixteenBit: sixteenBit) else { throw ImageImportError.unreadable }
         return image
     }
 
     /// Applies the settings to a filter that already holds the decoded frame, and reads the pixels out.
-    fileprivate static func render(_ filter: CIRAWFilter, settings: RawDevelopSettings) -> CGImage? {
+    fileprivate static func render(_ filter: CIRAWFilter, settings: RawDevelopSettings, sixteenBit: Bool = false) -> CGImage? {
         filter.exposure = settings.exposure
         filter.neutralTemperature = settings.temperature
         filter.neutralTint = settings.tint
@@ -143,6 +144,10 @@ nonisolated enum RawImporter {
         if settings.supportsLensCorrection { filter.isLensCorrectionEnabled = settings.lensCorrection }
         if settings.supportsHighlightRecovery { filter.isHighlightRecoveryEnabled = settings.highlightRecovery }
         guard let output = filter.outputImage else { return nil }
+        if sixteenBit {
+            return context.createCGImage(output, from: output.extent.integral, format: .RGBA16,
+                                         colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        }
         return dithered(output, context: context)
     }
 

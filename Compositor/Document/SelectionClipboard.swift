@@ -1,10 +1,11 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// Pixels copied from the canvas, with where they came from so Paste can put them back in place.
 struct PixelClipboard {
     let image: CGImage
     let origin: CGPoint
-    /// The system pasteboard's change count right after writing; a mismatch means another app copied since.
+    /// The pasteboard's change count right after writing; a mismatch means another app copied since.
     let changeCount: Int
 }
 
@@ -18,6 +19,11 @@ struct CopiedLayer {
 }
 
 extension EditorSession {
+    /// The pasteboard Copy and Paste use: the system's, except under tests, where each test process gets one of its own,
+    /// so tests running in parallel processes don't copy over each other's pixels.
+    static let pasteboard: NSPasteboard = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
+        ? .general : .withUniqueName()
+
     /// Whole-pixel bounds of what Copy takes: the selection, or the whole canvas without one.
     /// Path boolean operations leave tiny float noise (59.9999999), so round with a tolerance
     /// rather than letting it add a whole pixel.
@@ -40,12 +46,16 @@ extension EditorSession {
 
     /// The active layer's pixels (or mask as opaque gray) exactly as they sit on the canvas,
     /// clipped to the selection (soft edges kept), or the whole canvas without one.
-    func renderSelectedPixels(from layer: ImageLayer, mask: Bool) throws -> (image: CGImage, region: CGRect)? {
+    /// `sixteenBit`: a 16-bit layer's pixels lifted at 16 bits (`DeepLayer`).
+    func renderSelectedPixels(from layer: ImageLayer, mask: Bool, sixteenBit: Bool = false) throws -> (image: CGImage, region: CGRect)? {
         guard let document else { return nil }
         let clip = try selection?.clip(canvas: document.size)
         if clip != nil, clip?.coverage == nil { return nil }
         guard let region = selectionCopyRegion() else { return nil }
-        let context = try BrushRaster.context(width: Int(region.width), height: Int(region.height), mask: false)
+        let deep = sixteenBit && !mask ? try layer.asset.flatMap { try DeepLayer.flattened($0) } : nil
+        let context = deep == nil ? try BrushRaster.context(width: Int(region.width), height: Int(region.height), mask: false)
+                                  : try DeepLayer.context(width: Int(region.width), height: Int(region.height),
+                                                          hdr: deep.map(DeepLayer.isHDR) ?? false)
         context.translateBy(x: -region.minX, y: -region.minY)
         clip?.apply(to: context)
         let transform = displayedTransform(for: layer)
@@ -54,7 +64,7 @@ extension EditorSession {
             context.setFillColor(gray: placement == nil ? 0 : LayerMask.background(of: owned.asset.thumbnail), alpha: 1)
             context.fill(region)
             LayerRenderer.drawCoverage(owned.asset.image, transform: placement ?? transform, in: context)
-        } else if !mask, let image = layer.asset?.image {
+        } else if !mask, let image = deep ?? layer.asset?.image {
             LayerRenderer.draw(image, transform: transform, center: transform.center, in: context)
         } else { return nil }
         guard let image = context.makeImage() else { throw ExportError.render }
@@ -103,7 +113,7 @@ extension EditorSession {
     func copySelection() {
         guard canCopyPixels || canCopyLayer, let layer = activeLayer else { return }
         guard canCopyPixels else {
-            let pasteboard = NSPasteboard.general
+            let pasteboard = Self.pasteboard
             pasteboard.clearContents()
             pasteboard.setString(layer.id.uuidString, forType: NSPasteboard.PasteboardType("com.compositor.copied-layer"))
             pixelClipboard = nil
@@ -113,13 +123,13 @@ extension EditorSession {
         do {
             guard let copied = try renderSelectedPixels(from: layer, mask: isMaskSelected) else { NSSound.beep(); return }
             store(copied)
-            if canCopyLayer { copiedLayer = CopiedLayer(ids: copiedLayerIDs(), changeCount: NSPasteboard.general.changeCount) }
+            if canCopyLayer { copiedLayer = CopiedLayer(ids: copiedLayerIDs(), changeCount: Self.pasteboard.changeCount) }
         } catch { brushError = error.localizedDescription }
     }
 
     /// Keeps pixels for Paste and puts them on the system pasteboard as PNG.
     private func store(_ copied: (image: CGImage, region: CGRect)) {
-        let pasteboard = NSPasteboard.general
+        let pasteboard = Self.pasteboard
         pasteboard.clearContents()
         if let png = NSBitmapImageRep(cgImage: copied.image).representation(using: .png, properties: [:]) {
             pasteboard.setData(png, forType: .png)
@@ -137,15 +147,15 @@ extension EditorSession {
 
     var canPaste: Bool {
         guard document != nil, canEditLayers else { return false }
-        if let pixelClipboard, NSPasteboard.general.changeCount == pixelClipboard.changeCount { return true }
-        return NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil)
+        if let pixelClipboard, Self.pasteboard.changeCount == pixelClipboard.changeCount { return true }
+        return Self.pasteboard.canReadObject(forClasses: [NSImage.self], options: nil)
     }
 
     /// Cmd-V: pastes as a new layer above the active one. Pixels copied here go back exactly
     /// where they came from; images copied in other apps are centered.
     func paste() {
         guard canPaste, let document else { return }
-        let pasteboard = NSPasteboard.general
+        let pasteboard = Self.pasteboard
         if let clip = pixelClipboard, pasteboard.changeCount == clip.changeCount {
             addPixelLayer(clip.image, at: clip.origin, name: nextLayerName(), editName: "粘贴")
         } else if let external = NSImage(pasteboard: pasteboard)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
@@ -154,6 +164,41 @@ extension EditorSession {
                                  y: floor((document.size.height - CGFloat(image.height)) / 2))
             addPixelLayer(image, at: origin, name: nextLayerName(), editName: "粘贴")
         } else { NSSound.beep() }
+    }
+
+    /// Cmd-V on the New canvas screen with an image on the clipboard rather than a size copied as text: a canvas the
+    /// image's size, with the image in it, as importing the image makes. Files copied in the Finder come in themselves
+    /// (the clipboard also holds their icon, as an image).
+    var canPasteImageAsNewCanvas: Bool {
+        guard document == nil, !isProjectBusy, !isImporting else { return false }
+        let pasteboard = Self.pasteboard
+        if let text = pasteboard.string(forType: .string), CanvasDocument.validDimension(text) != nil { return false }
+        return !copiedImageFiles(pasteboard).isEmpty || pasteboard.availableType(from: [.png, .tiff]) != nil
+    }
+
+    func pasteImageAsNewCanvas() async {
+        guard canPasteImageAsNewCanvas else { return }
+        let pasteboard = Self.pasteboard
+        let files = copiedImageFiles(pasteboard)
+        if !files.isEmpty { await importImages(files); return }
+        // Image data alone: through a file, so it's read as any imported image is (16 bits kept, color converted).
+        guard let type = pasteboard.availableType(from: [.png, .tiff]), let data = pasteboard.data(forType: type) else { return }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("Pasted Image").appendingPathExtension(type == .png ? "png" : "tiff")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: file)
+        } catch { importError = error.localizedDescription; return }
+        await importImages([file])
+    }
+
+    /// Image files copied in the Finder.
+    private func copiedImageFiles(_ pasteboard: NSPasteboard) -> [URL] {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.filter { url in
+            UTType(filenameExtension: url.pathExtension).map { $0.conforms(to: .image) || url.pathExtension.lowercased() == "psd" } ?? false
+        }
     }
 
     /// Cmd-J (Layer via Copy): the selection's pixels become a new layer in place; with no
