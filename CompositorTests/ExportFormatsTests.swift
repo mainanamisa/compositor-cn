@@ -43,7 +43,7 @@ struct ExportFormatsTests {
         var options = JPEGOptions()
         options.quality = 0.7
         options.red = 1; options.green = 0; options.blue = 1
-        for format in ExportFormat.available {
+        for format in ExportFormat.available where format != .exr {
             let (data, preview) = try await encode(raster, format: format, options: options)
             #expect(!data.isEmpty)
             #expect(preview.width > 0 && preview.height > 0)
@@ -58,6 +58,7 @@ struct ExportFormatsTests {
             case .gif: #expect(Array(data.prefix(4)) == Array("GIF8".utf8))
             case .bmp: #expect(Array(data.prefix(2)) == Array("BM".utf8))
             case .pdf: #expect(Array(data.prefix(4)) == Array("%PDF".utf8))
+            case .exr: break // filtered above: EXR goes through the EXR writer, not CGImageDestination
             }
         }
     }
