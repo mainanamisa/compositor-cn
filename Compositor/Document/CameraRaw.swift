@@ -225,13 +225,23 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
             source = try settings.geometry.apply(source)
         }
         return try ImageAdjustmentPixels.run(source) { pixels, width, height, stride in
-            let adaptive = settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0
+            let adaptive = settings.contrast != 0 || settings.highlights != 0
             let brightness = adaptive
                 ? known ?? CameraRawTables.brightness(pixels, width: width, height: height, stride: stride) : CameraRawTables.Brightness()
             if clipping == nil && !sharpenMask && settings.adjustsCalibration {
                 settings.applyCalibration(pixels: pixels, width: width, height: height, stride: stride)
             }
-            var table = CameraRawTables.compose(CameraRawTables.stages(for: settings, brightness: brightness))
+            // Shadows adapts region by region, so it can't join the color table: the stages before it run, then it,
+            // then the rest.
+            let shadows = settings.shadows != 0 && CameraRawShadows.tables != nil
+            if shadows {
+                if let before = CameraRawTables.compose(CameraRawTables.stages(for: settings, brightness: brightness, part: .beforeShadows)) {
+                    adjust_camera_raw(pixels, width, height, stride, before, Int32(CameraRawTables.grid), 0)
+                }
+                CameraRawShadows.apply(settings.shadows, pixels: pixels, width: width, height: height, stride: stride, scale: pixelScale)
+            }
+            var table = CameraRawTables.compose(CameraRawTables.stages(for: settings, brightness: brightness,
+                                                                       part: shadows ? .afterShadows : nil))
             if foldsColor && colorAdjusts { table = settings.foldingColor(into: table) }
             if table != nil || clipping != nil {
                 adjust_camera_raw(pixels, width, height, stride, table, Int32(CameraRawTables.grid), mode)

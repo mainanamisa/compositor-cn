@@ -589,6 +589,9 @@ final class EditorSession {
     var showsRawDevelop = false { didSet { resumeFileRequests() } }
     /// Import was pressed and the full frame is developing: the sheet stays up, showing that, until the layer is in.
     var rawImporting = false
+    /// Camera Raw… was pressed: once the import is done, the Camera Raw Filter opens on the RAW's layer.
+    @ObservationIgnored private var rawOpensCameraRaw = false
+    @ObservationIgnored private var cameraRawAfterImport: UUID?
     @ObservationIgnored private var rawContinuation: CheckedContinuation<RawDevelopSettings?, Never>?
     /// Tests assign this to develop without a sheet.
     @ObservationIgnored var confirmRawDevelop: ((URL, RawDevelopSettings) async -> RawDevelopSettings?)?
@@ -603,7 +606,8 @@ final class EditorSession {
             showsRawDevelop = true
         }
     }
-    func finishRawDevelop(_ settings: RawDevelopSettings?) {
+    func finishRawDevelop(_ settings: RawDevelopSettings?, openingCameraRaw: Bool = false) {
+        rawOpensCameraRaw = settings != nil && openingCameraRaw
         // Importing, the sheet waits for the develop to finish (see `endRawDevelop`); cancelling closes it now.
         if settings != nil, rawContinuation != nil { rawImporting = true } else { endRawDevelop() }
         let continuation = rawContinuation
@@ -879,6 +883,8 @@ final class EditorSession {
                     guard let developed = await RawImporter.Queue.shared.develop(url, settings: settings, limit: nil, sixteenBit: true)
                     else { throw ImageImportError.unreadable }
                     insert(try DeepLayer.asset(developed, name: url.deletingPathExtension().lastPathComponent), centeredAt: point)
+                    if rawOpensCameraRaw { cameraRawAfterImport = activeLayerID }
+                    rawOpensCameraRaw = false
                 } else if UTType(filenameExtension: url.pathExtension)?.conforms(to: .svg) == true {
                     let asset = try await ImageImporter.shared.decodeSVG(url, fitting: document?.size,
                                                                          remainingPixels: DocumentLimits.documentPixelBudget - usedPixels)
@@ -919,6 +925,13 @@ final class EditorSession {
         }
         isImporting = false
         if !failures.isEmpty { importError = failures.joined(separator: "\n\n") }
+        if let layer = cameraRawAfterImport {
+            cameraRawAfterImport = nil
+            if document?.layers.contains(where: { $0.id == layer }) == true {
+                selectLayer(layer)
+                beginFilter(.cameraRaw)
+            }
+        }
     }
 
     func insert(_ asset: ImportedImage, centeredAt point: CGPoint? = nil) {

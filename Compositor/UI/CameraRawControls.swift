@@ -21,7 +21,9 @@ struct CameraRawControls: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 20)
             }
+            .padding(.trailing, -20)
             .frame(maxHeight: .infinity)
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -136,16 +138,46 @@ struct CameraRawControls: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(section.rawValue)
                 Spacer(minLength: 0)
-                if section == .light, raw.adjustsLight { eye(shown: session.filterEdit?.showsCameraRawLight ?? true, name: "亮度", group: .light) }
-                if section == .color, raw.adjustsColor { eye(shown: session.filterEdit?.showsCameraRawColor ?? true, name: "颜色", group: .color) }
-                if section == .effects, raw.adjustsEffects { eye(shown: session.filterEdit?.showsCameraRawEffects ?? true, name: "效果", group: .effects) }
-                if section == .curve, raw.adjustsCurve { eye(shown: session.filterEdit?.showsCameraRawCurve ?? true, name: "曲线", group: .curve) }
-                if section == .colorMixer, raw.adjustsMixer { eye(shown: session.filterEdit?.showsCameraRawMixer ?? true, name: "混色器", group: .mixer) }
-                if section == .colorGrading, raw.adjustsGrading { eye(shown: session.filterEdit?.showsCameraRawGrading ?? true, name: "颜色分级", group: .grading) }
-                if section == .detail, raw.adjustsDetail { eye(shown: session.filterEdit?.showsCameraRawDetail ?? true, name: "细节", group: .detail) }
-                if section == .optics, raw.adjustsOptics { eye(shown: session.filterEdit?.showsCameraRawOptics ?? true, name: "光学", group: .optics) }
-                if section == .geometry, raw.adjustsGeometry { eye(shown: session.filterEdit?.showsCameraRawGeometry ?? true, name: "几何", group: .geometry) }
-                if section == .calibration, raw.adjustsCalibration { eye(shown: session.filterEdit?.showsCameraRawCalibration ?? true, name: "校准", group: .calibration) }
+                if section == .light, raw.adjustsLight {
+                    eye(shown: session.filterEdit?.showsCameraRawLight ?? true, name: "亮度", group: .light)
+                    resetButton(section.group)
+                }
+                if section == .color, raw.adjustsColor {
+                    eye(shown: session.filterEdit?.showsCameraRawColor ?? true, name: "颜色", group: .color)
+                    resetButton(section.group)
+                }
+                if section == .effects, raw.adjustsEffects {
+                    eye(shown: session.filterEdit?.showsCameraRawEffects ?? true, name: "效果", group: .effects)
+                    resetButton(section.group)
+                }
+                if section == .curve, raw.adjustsCurve {
+                    eye(shown: session.filterEdit?.showsCameraRawCurve ?? true, name: "曲线", group: .curve)
+                    resetButton(section.group)
+                }
+                if section == .colorMixer, raw.adjustsMixer {
+                    eye(shown: session.filterEdit?.showsCameraRawMixer ?? true, name: "混色器", group: .mixer)
+                    resetButton(section.group)
+                }
+                if section == .colorGrading, raw.adjustsGrading {
+                    eye(shown: session.filterEdit?.showsCameraRawGrading ?? true, name: "颜色分级", group: .grading)
+                    resetButton(section.group)
+                }
+                if section == .detail, raw.adjustsDetail {
+                    eye(shown: session.filterEdit?.showsCameraRawDetail ?? true, name: "细节", group: .detail)
+                    resetButton(section.group)
+                }
+                if section == .optics, raw.adjustsOptics {
+                    eye(shown: session.filterEdit?.showsCameraRawOptics ?? true, name: "光学", group: .optics)
+                    resetButton(section.group)
+                }
+                if section == .geometry, raw.adjustsGeometry {
+                    eye(shown: session.filterEdit?.showsCameraRawGeometry ?? true, name: "几何", group: .geometry)
+                    resetButton(section.group)
+                }
+                if section == .calibration, raw.adjustsCalibration {
+                    eye(shown: session.filterEdit?.showsCameraRawCalibration ?? true, name: "校准", group: .calibration)
+                    resetButton(section.group)
+                }
             }
             if expanded.contains(section) {
                 switch section {
@@ -292,6 +324,17 @@ struct CameraRawControls: View {
         .accessibilityLabel(shown ? "隐藏\(name)" : "显示\(name)")
     }
 
+    /// Puts an adjusted section back to its defaults.
+    private func resetButton(_ group: CameraRawGroup) -> some View {
+        Button { session.resetCameraRaw(group) } label: {
+            Image(systemName: "arrow.counterclockwise")
+        }
+        .buttonStyle(.borderless)
+        .disabled(session.filterEdit?.committing == true)
+        .help("将「\(group.displayName)」重置为默认值")
+        .accessibilityLabel("重置\(group.displayName)")
+    }
+
     private func slider(_ title: String, _ key: WritableKeyPath<CameraRawSettings, Double>, range: ClosedRange<Double>,
                         decimals: Int, clipping: CameraRawClipping?, track: CameraRawSliderTrack = .plain,
                         reset resetValue: Double = 0, help: String) -> some View {
@@ -382,5 +425,19 @@ struct CameraRawControls: View {
         case geometry = "几何"
         case calibration = "校准"
         var id: String { rawValue }
+        var group: CameraRawGroup {
+            switch self {
+            case .light: return .light
+            case .color: return .color
+            case .colorGrading: return .grading
+            case .effects: return .effects
+            case .curve: return .curve
+            case .colorMixer: return .mixer
+            case .detail: return .detail
+            case .optics: return .optics
+            case .geometry: return .geometry
+            case .calibration: return .calibration
+            }
+        }
     }
 }

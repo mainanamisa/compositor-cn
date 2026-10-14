@@ -515,6 +515,171 @@ static int guided_filter_plane(const float *src, float *dst, size_t width, size_
     return ok;
 }
 
+// The mean of each pixel's square neighborhood, `radius` either side, over the part of it inside the plane (the window
+// shrinks at the edges rather than repeating them). For planes a few hundred pixels across; `dst` may not alias `src`.
+static int box_mean_plane(const float *src, float *dst, size_t width, size_t height, int radius) {
+    float *temp = malloc(width * height * sizeof(float));
+    if (!temp) return 0;
+    for (size_t y = 0; y < height; ++y) {
+        const float *row = src + y * width;
+        double sum = 0;
+        size_t lo = 0, hi = 0;   // the window is [lo, hi)
+        for (size_t x = 0; x < width; ++x) {
+            size_t want_lo = x > (size_t)radius ? x - radius : 0, want_hi = x + radius + 1 < width ? x + radius + 1 : width;
+            while (hi < want_hi) sum += row[hi++];
+            while (lo < want_lo) sum -= row[lo++];
+            temp[y * width + x] = (float)(sum / (double)(hi - lo));
+        }
+    }
+    for (size_t x = 0; x < width; ++x) {
+        double sum = 0;
+        size_t lo = 0, hi = 0;
+        for (size_t y = 0; y < height; ++y) {
+            size_t want_lo = y > (size_t)radius ? y - radius : 0, want_hi = y + radius + 1 < height ? y + radius + 1 : height;
+            while (hi < want_hi) sum += temp[hi++ * width + x];
+            while (lo < want_lo) sum -= temp[lo++ * width + x];
+            dst[y * width + x] = (float)(sum / (double)(hi - lo));
+        }
+    }
+    free(temp);
+    return 1;
+}
+
+// Camera Raw's Shadows, as Photoshop's Camera Raw Filter adapts it to the picture: a dark region is lifted (or, below
+// zero, deepened) by how far its level sits under the picture's reference brightness, and the texture within it is
+// stretched more above that level than below. The region's level is an edge-aware smoothing of log2 luminance (He's
+// fast guided filter, worked on a copy about 384 pixels on its short side, so a preview and the full picture agree);
+// the reference is the mean linear luminance of the pixels that differ from a neighbor, as Photoshop leaves perfectly
+// flat areas out. `coefficients` are the lift Δ, the gain above and the gain below, each over K rows by x columns
+// (x the region's level against the reference, K the reference, both log2), fitted to Photoshop's renders.
+// Color keeps its proportions.
+void adjust_camera_raw_shadows(uint8_t *rgba, size_t width, size_t height, size_t stride, const float *coefficients,
+                               int xCount, float xLow, float xStep, int kCount, float kLow, float kStep) {
+    if (!width || !height || xCount < 2 || kCount < 1) return;
+    const double floorY = 1.0 / 8192;
+    double decoded[256];
+    for (int i = 0; i < 256; ++i) decoded[i] = srgb_decode(i / 255.0);
+    const double *decode = decoded;
+    // The reference: textured pixels, those differing from a neighbor; every pixel if none do.
+    enum { bands = 32 };
+    double sums[bands][4];
+    memset(sums, 0, sizeof sums);
+    double (*parts)[4] = sums;
+    size_t rows = (height + bands - 1) / bands;
+    dispatch_apply(bands, DISPATCH_APPLY_AUTO, ^(size_t band) {
+        double total = 0, count = 0, all = 0, allCount = 0;
+        size_t start = band * rows, end = start + rows < height ? start + rows : height;
+        for (size_t y = start; y < end; ++y) {
+            const uint8_t *row = rgba + y * stride;
+            for (size_t x = 0; x < width; ++x) {
+                const uint8_t *p = row + x * 4;
+                if (!p[3]) continue;
+                double alpha = p[3];
+                double r = p[3] == 255 ? decode[p[0]] : srgb_decode(fmin(1.0, p[0] / alpha));
+                double g = p[3] == 255 ? decode[p[1]] : srgb_decode(fmin(1.0, p[1] / alpha));
+                double b = p[3] == 255 ? decode[p[2]] : srgb_decode(fmin(1.0, p[2] / alpha));
+                double luminance = rec709(r, g, b);
+                all += luminance; allCount += 1;
+                uint8_t v = p[1];
+                int textured = (x > 0 && p[-4 + 1] != v) || (x + 1 < width && p[4 + 1] != v)
+                    || (y > 0 && (p - stride)[1] != v) || (y + 1 < height && (p + stride)[1] != v);
+                if (textured) { total += luminance; count += 1; }
+            }
+        }
+        parts[band][0] = total; parts[band][1] = count; parts[band][2] = all; parts[band][3] = allCount;
+    });
+    double total = 0, count = 0, all = 0, allCount = 0;
+    for (int band = 0; band < bands; ++band) { total += sums[band][0]; count += sums[band][1]; all += sums[band][2]; allCount += sums[band][3]; }
+    double key = log2(fmax(floorY, count > 0 ? total / count : allCount > 0 ? all / allCount : 0.18));
+
+    // The smoothing's coefficients, on the small copy.
+    size_t shortSide = width < height ? width : height;
+    size_t scale = shortSide / 384 > 1 ? shortSide / 384 : 1;
+    size_t lw = (width + scale - 1) / scale, lh = (height + scale - 1) / scale, cells = lw * lh;
+    float *low = calloc(cells, sizeof(float)), *weight = calloc(cells, sizeof(float));
+    float *mean = malloc(cells * sizeof(float)), *square = malloc(cells * sizeof(float));
+    float *a = malloc(cells * sizeof(float)), *b = malloc(cells * sizeof(float));
+    int ok = low && weight && mean && square && a && b;
+    if (ok) {
+        for (size_t y = 0; y < height; ++y) {
+            const uint8_t *row = rgba + y * stride;
+            float *lowRow = low + (y / scale) * lw, *weightRow = weight + (y / scale) * lw;
+            for (size_t x = 0; x < width; ++x) {
+                const uint8_t *p = row + x * 4;
+                if (!p[3]) continue;
+                double alpha = p[3];
+                double r = p[3] == 255 ? decode[p[0]] : srgb_decode(fmin(1.0, p[0] / alpha));
+                double g = p[3] == 255 ? decode[p[1]] : srgb_decode(fmin(1.0, p[1] / alpha));
+                double bl = p[3] == 255 ? decode[p[2]] : srgb_decode(fmin(1.0, p[2] / alpha));
+                lowRow[x / scale] += (float)log2(fmax(floorY, rec709(r, g, bl)));
+                weightRow[x / scale] += 1;
+            }
+        }
+        for (size_t i = 0; i < cells; ++i) low[i] = weight[i] > 0 ? low[i] / weight[i] : (float)key;
+        size_t lowShort = lw < lh ? lw : lh;
+        int radius = (int)lround(0.25 * lowShort);
+        if (radius < 1) radius = 1;
+        const float epsilon = 1.5f;
+        ok = box_mean_plane(low, mean, lw, lh, radius);
+        if (ok) {
+            for (size_t i = 0; i < cells; ++i) a[i] = low[i] * low[i];
+            ok = box_mean_plane(a, square, lw, lh, radius);
+        }
+        if (ok) {
+            for (size_t i = 0; i < cells; ++i) {
+                float variance = fmaxf(0, square[i] - mean[i] * mean[i]);
+                a[i] = variance / (variance + epsilon);
+                b[i] = mean[i] - a[i] * mean[i];
+            }
+            ok = box_mean_plane(a, mean, lw, lh, radius) && box_mean_plane(b, square, lw, lh, radius);
+        }
+    }
+    if (ok) {
+        const float *ma = mean, *mb = square;
+        size_t plane = (size_t)xCount * (size_t)kCount;
+        // The reference picks one pair of K rows for the whole picture.
+        double kp = fmin(kCount - 1, fmax(0, (key - kLow) / kStep));
+        int k0 = (int)kp < kCount - 1 ? (int)kp : kCount - 1, k1 = k0 + 1 < kCount ? k0 + 1 : k0;
+        double kt = kp - k0;
+        in_bands(height, ^(size_t first, size_t last) { for (size_t y = first; y < last; ++y) {
+            double fy = fmin(lh - 1, fmax(0, (y + 0.5) / scale - 0.5));
+            size_t y0 = (size_t)fy, y1 = y0 + 1 < lh ? y0 + 1 : y0;
+            double ty = fy - y0;
+            uint8_t *row = rgba + y * stride;
+            for (size_t x = 0; x < width; ++x) {
+                uint8_t *p = row + x * 4;
+                double alpha = p[3];
+                if (!alpha) continue;
+                double r = p[3] == 255 ? decode[p[0]] : srgb_decode(fmin(1.0, p[0] / alpha));
+                double g = p[3] == 255 ? decode[p[1]] : srgb_decode(fmin(1.0, p[1] / alpha));
+                double bl = p[3] == 255 ? decode[p[2]] : srgb_decode(fmin(1.0, p[2] / alpha));
+                double luminance = rec709(r, g, bl);
+                if (luminance <= floorY) continue;
+                double fx = fmin(lw - 1, fmax(0, (x + 0.5) / scale - 0.5));
+                size_t x0 = (size_t)fx, x1 = x0 + 1 < lw ? x0 + 1 : x0;
+                double tx = fx - x0;
+                double sa = (ma[y0 * lw + x0] * (1 - tx) + ma[y0 * lw + x1] * tx) * (1 - ty) + (ma[y1 * lw + x0] * (1 - tx) + ma[y1 * lw + x1] * tx) * ty;
+                double sb = (mb[y0 * lw + x0] * (1 - tx) + mb[y0 * lw + x1] * tx) * (1 - ty) + (mb[y1 * lw + x0] * (1 - tx) + mb[y1 * lw + x1] * tx) * ty;
+                double level = log2(luminance), region = sa * level + sb, detail = level - region;
+                double xp = fmin(xCount - 1, fmax(0, (region - key - xLow) / xStep));
+                int x0c = (int)xp < xCount - 1 ? (int)xp : xCount - 2;
+                double xt = xp - x0c;
+                double term[3];
+                for (int t = 0; t < 3; ++t) {
+                    const float *c = coefficients + t * plane;
+                    double row0 = c[k0 * xCount + x0c] * (1 - xt) + c[k0 * xCount + x0c + 1] * xt;
+                    double row1 = c[k1 * xCount + x0c] * (1 - xt) + c[k1 * xCount + x0c + 1] * xt;
+                    term[t] = row0 * (1 - kt) + row1 * kt;
+                }
+                double lift = term[0] + term[1] * fmax(detail, 0) + term[2] * fmin(detail, 0);
+                double gain = exp2(lift);
+                write_premultiplied(p, srgb_encode(r * gain), srgb_encode(g * gain), srgb_encode(bl * gain), alpha);
+            }
+        } });
+    }
+    free(low); free(weight); free(mean); free(square); free(a); free(b);
+}
+
 static int effects_radius(double base, double scale) {
     double radius = base * (scale > 0 ? scale : 1);
     if (radius < 1) radius = 1;
