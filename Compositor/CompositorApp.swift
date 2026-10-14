@@ -139,9 +139,11 @@ struct CompositorApp: App {
                         // shortcuts (Photoshop's ⌘Y sits by ⌘U and would be hit by mistake); Search Commands finds them.
                         Menu("CMYK") {
                             Toggle("校样颜色", isOn: Binding(get: { session.proofsColors }, set: { session.proofsColors = $0 }))
+                                .assignableShortcut("CMYK 校样颜色")
                                 .disabled(session.document == nil)
                             Toggle("色域警告", isOn: Binding(get: { session.showsGamutWarning },
                                                                   set: { session.showsGamutWarning = $0 }))
+                                .assignableShortcut("CMYK 色域警告")
                                 .disabled(session.document == nil)
                             Divider()
                             Menu("配置文件") {

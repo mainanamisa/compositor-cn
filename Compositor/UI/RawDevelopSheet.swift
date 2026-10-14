@@ -63,6 +63,9 @@ struct RawDevelopSheet: View {
                     Button("重置") { settings.reset() }.disabled(settings.isAsShot)
                     Spacer()
                     Button("取消") { session.finishRawDevelop(nil) }.keyboardShortcut(.cancelAction)
+                    // Imports, then opens the Camera Raw Filter on the new layer, as Photoshop opens a RAW in Camera Raw.
+                    Button("Camera Raw…") { session.finishRawDevelop(settings, openingCameraRaw: true) }
+                        .help("导入，然后打开 Camera Raw 滤镜")
                     Button("导入") { session.finishRawDevelop(settings) }.keyboardShortcut(.defaultAction)
                 }
             }

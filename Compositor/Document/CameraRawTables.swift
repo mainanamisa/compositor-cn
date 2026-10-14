@@ -13,9 +13,9 @@ nonisolated enum CameraRawTables {
     private static let entries = size * size * size * 3
     /// White balance: a 9 × 9 grid, Temperature by rows and Tint across, each −100…100 by 25. Then Exposure −5…5 by
     /// 0.5; Whites, Blacks, Saturation and Vibrance, each −100…100 by 25; and Contrast, Highlights and Shadows, each
-    /// at the seven `brightnesses` by the seven `adaptiveValues`.
+    /// at the seven `brightnesses` by the seven `adaptiveValues`. (Shadows' are no longer read: see `CameraRawShadows`.)
     private static let exposureStart = 81, whitesStart = 102, blacksStart = 111, saturationStart = 120, vibranceStart = 129
-    private static let contrastStart = 138, highlightsStart = 187, shadowsStart = 236
+    private static let contrastStart = 138, highlightsStart = 187
     /// Then the Color Mixer, luminance, saturation and hue in turn, each for its eight colors (red, orange, yellow,
     /// green, aqua, blue, purple, magenta); Calibration's red, green and blue hue and saturation; and the parametric
     /// curve's Shadows, Darks, Lights and Highlights: each −100…100 by 50.
@@ -123,8 +123,8 @@ nonisolated enum CameraRawTables {
     }
 
     /// What the adaptive sliders read from the picture before any of them: the mean of each pixel's brightest channel
-    /// (Contrast), the mean luminance (Shadows) and the log-average of the brightest channel (Highlights), all in
-    /// linear light and given as sRGB levels, 0…255.
+    /// (Contrast) and the log-average of the brightest channel (Highlights), in linear light and given as sRGB levels,
+    /// 0…255. (The mean luminance is kept for the tables' sake; Shadows measures the picture itself.)
     struct Brightness: Sendable {
         var brightest = 128.0, luminance = 128.0, logBrightest = 128.0
     }
@@ -146,9 +146,19 @@ nonisolated enum CameraRawTables {
         stage(start, value, low: -100, step: 50, tables: 5)
     }
 
+    /// Which of the stages: Shadows, adapting region by region, runs as a pass of its own between the ones before it and
+    /// the ones after (`CameraRawShadows`).
+    enum Part { case beforeShadows, afterShadows }
+
     /// The stages in Camera Raw's order, leaving out sliders at zero: Calibration, then Light and Color, then the
     /// parametric curve while its dividers are where Photoshop's are measured (with them moved, the curve pass draws it).
-    static func stages(for settings: CameraRawSettings, brightness: Brightness) -> [CameraRawStage] {
+    /// Shadows isn't among them; nil `part` is every other stage.
+    static func stages(for settings: CameraRawSettings, brightness: Brightness, part: Part? = nil) -> [CameraRawStage] {
+        if let part {
+            let all = stages(for: settings, brightness: brightness)
+            let before = beforeShadowsCount(settings)
+            return part == .beforeShadows ? Array(all.prefix(before)) : Array(all.dropFirst(before))
+        }
         var stages: [CameraRawStage] = []
         let calibration = settings.calibration
         for (index, value) in [calibration.redHue, calibration.redSaturation, calibration.greenHue, calibration.greenSaturation,
@@ -163,7 +173,6 @@ nonisolated enum CameraRawTables {
         if settings.highlights != 0 {
             stages.append(adaptive(highlightsStart, settings.highlights, brightness: brightness.logBrightest))
         }
-        if settings.shadows != 0 { stages.append(adaptive(shadowsStart, settings.shadows, brightness: brightness.luminance)) }
         if settings.whites != 0 { stages.append(stage(whitesStart, settings.whites, low: -100, step: 25, tables: 9)) }
         if settings.blacks != 0 { stages.append(stage(blacksStart, settings.blacks, low: -100, step: 25, tables: 9)) }
         if settings.saturation != 0 { stages.append(stage(saturationStart, settings.saturation, low: -100, step: 25, tables: 9)) }
@@ -175,6 +184,15 @@ nonisolated enum CameraRawTables {
             }
         }
         return stages
+    }
+
+    /// How many of the stages come before Shadows: Calibration, Exposure, white balance, Contrast and Highlights.
+    private static func beforeShadowsCount(_ settings: CameraRawSettings) -> Int {
+        let calibration = settings.calibration
+        return [calibration.redHue, calibration.redSaturation, calibration.greenHue, calibration.greenSaturation,
+                calibration.blueHue, calibration.blueSaturation].filter { $0 != 0 }.count
+            + (settings.exposure != 0 ? 1 : 0) + (settings.temperature != 0 || settings.tint != 0 ? 1 : 0)
+            + (settings.contrast != 0 ? 1 : 0) + (settings.highlights != 0 ? 1 : 0)
     }
 
     /// Color Grading as Photoshop's draws it, in the order that composes like its own: the luminance sliders, then the
