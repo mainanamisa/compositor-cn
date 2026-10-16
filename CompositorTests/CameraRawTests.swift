@@ -582,6 +582,18 @@ struct CameraRawTests {
         #expect(hottest % CameraRawScope.scopeSide > CameraRawScope.scopeSide / 2, "red sits on the right of the vectorscope")
     }
 
+    @Test func scopeSamplingChangesAtFourMegapixelsWithoutChangingColors() throws {
+        // The C kernel divides rows among 16 bands, rounding each band's sample count up.
+        for (width, height, count) in [(2000, 2000, 256_000), (2001, 2000, 64_256)] {
+            let red = try image(width: width, height: height, red: 1, green: 0, blue: 0)
+            let scope = try #require(CameraRawScope.make(red))
+            #expect(scope.red[255] == Double(count))
+            #expect(scope.green[0] == Double(count) && scope.blue[0] == Double(count))
+            #expect(scope.red.reduce(0, +) == Double(count))
+            #expect(scope.vectorscope.reduce(0, +) == Double(count))
+        }
+    }
+
     @Test func curveMixerAndGradingChangeOnlyTheirOwnTones() throws {
         let dark = try image(red: 0.12, green: 0.12, blue: 0.12)
         let light = try image(red: 0.62, green: 0.62, blue: 0.62)
@@ -930,5 +942,82 @@ struct CameraRawTests {
         }
         let lifted = try levels(shadows: 100, highlights: 0)
         #expect(lifted[45] >= 45 + 12, "shadows +100 lifts the dark tones: 45 → \(lifted[45])")
+    }
+
+    private func largePreviewSession() throws -> EditorSession {
+        let session = EditorSession()
+        session.createDocument(width: 3000, height: 16, emptyLayer: true)
+        let context = try BrushRaster.context(width: 3000, height: 16, mask: false)
+        // Single-pixel stripes lose detail in the 2048-pixel interactive source.
+        context.setFillColor(CGColor(gray: 0.25, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 3000, height: 16))
+        context.setFillColor(CGColor(gray: 0.75, alpha: 1))
+        for x in stride(from: 0, to: 3000, by: 2) {
+            context.fill(CGRect(x: x, y: 0, width: 1, height: 16))
+        }
+        let input = try #require(context.makeImage())
+        session.insert(ImportedImage(image: input, thumbnail: input, name: "Fine detail"))
+        session.beginFilter(.cameraRaw)
+        return session
+    }
+
+    @Test func largeCameraRawPreviewKeepsNativeResolutionAcrossSliderUpdates() async throws {
+        let session = try largePreviewSession()
+        let edit = try #require(session.filterEdit)
+        defer { session.cancelFilter() }
+        #expect(edit.previewSource === edit.original.image, "no downsized source or extra full-size copy")
+        #expect(edit.previewScale == 1 && edit.previewMapping == edit.mapping)
+        #expect(edit.previewBrightness == nil, "opening does not measure full-size pixels on the main thread")
+        while let task = edit.previewTask { await task.value }
+        let brightness = try #require(edit.previewBrightness)
+        let expectedBrightness = CameraRawTables.brightness(of: edit.original.image)
+        #expect(brightness.brightest == expectedBrightness.brightest)
+        #expect(brightness.logBrightest == expectedBrightness.logBrightest)
+        #expect(brightness.luminance == expectedBrightness.luminance)
+        #expect(edit.preparedPreview?.width == 3000)
+        for exposure in [0.5, -0.5, 1] {
+            var settings = edit.settings
+            settings.cameraRaw.exposure = exposure
+            settings.cameraRaw.contrast = 10
+            session.updateFilter(settings, preview: true)
+            #expect(edit.preparedPreview?.width == 3000, "the previous sharp preview stays up while rendering")
+            while let task = edit.previewTask { await task.value }
+            let shown = try #require(edit.preparedPreview)
+            #expect(shown.width == 3000 && shown.height == 16)
+            let reference = try CameraRawScope.preview(edit.previewJob).image
+            #expect(try pixels(shown) == pixels(reference), "the existing renderer is unchanged")
+        }
+        let shown = try #require(edit.preparedPreview)
+        session.updateCameraRawReadout(at: CGPoint(x: 2997.5, y: 8.5))
+        let expected = try pixels(shown)[8 * 3000 + 2997]
+        #expect(edit.cameraRawReadout?.red == expected[0])
+    }
+
+    @Test func nativeCameraRawPreviewsCoalesceSliderChangesAndRespectPreviewOffAndCancel() async throws {
+        let session = try largePreviewSession()
+        let edit = try #require(session.filterEdit)
+        defer { session.cancelFilter() }
+        var settings = edit.settings
+        for exposure in [0.5, -1, 1.5] {
+            settings.cameraRaw.exposure = exposure
+            session.updateFilter(settings, preview: true)
+        }
+        #expect(edit.pending?.settings == settings, "only the latest pending slider settings are kept")
+        while let task = edit.previewTask { await task.value }
+        let reference = try CameraRawScope.preview(edit.previewJob).image
+        let newest = try #require(edit.preparedPreview)
+        #expect(try pixels(newest) == pixels(reference))
+        #expect(edit.preparedSettings == settings && edit.pending == nil)
+
+        settings.cameraRaw.exposure = -1
+        session.updateFilter(settings, preview: true)
+        session.updateFilter(settings, preview: false)
+        while let task = edit.previewTask { await task.value }
+        #expect(edit.preparedPreview == nil && edit.previewImage(for: edit.layerID) == nil)
+        session.updateFilter(settings, preview: true)
+        let closing = try #require(edit.previewTask)
+        session.cancelFilter()
+        await closing.value
+        #expect(session.filterEdit == nil)
     }
 }

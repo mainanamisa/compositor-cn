@@ -236,6 +236,7 @@ final class EditorSession {
     var shapeKind = ShapeKind.rectangle
     /// Corner radius in pixels for rectangles the Shape tool draws; 0 keeps the corners square.
     var shapeCornerRadius: Double = 0
+    var shapeSmoothing = false
     /// A Line shape's thickness in document pixels.
     var shapeLineWidth: Double = 4
     /// The shape being dragged out with the Shape tool, before it becomes a layer.

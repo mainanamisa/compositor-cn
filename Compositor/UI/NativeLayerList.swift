@@ -516,6 +516,36 @@ final class LayerTableView: NSTableView {
     private var clippingTracking: NSTrackingArea?
     private var clippingMonitor: Any?
     private var clippingCursorActive = false
+    private var middleScrollY: CGFloat?
+
+    /// Grab the layer list with the middle button without selecting or dragging any rows.
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2, enclosingScrollView != nil else { super.otherMouseDown(with: event); return }
+        middleScrollY = event.locationInWindow.y
+        NSCursor.closedHand.set()
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard event.buttonNumber == 2, let lastY = middleScrollY, let scroll = enclosingScrollView else {
+            super.otherMouseDragged(with: event)
+            return
+        }
+        let y = event.locationInWindow.y
+        middleScrollY = y
+        let clip = scroll.contentView
+        var bounds = clip.bounds
+        bounds.origin.y += (y - lastY) * (clip.isFlipped ? 1 : -1)
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2, middleScrollY != nil else { super.otherMouseUp(with: event); return }
+        middleScrollY = nil
+        NSCursor.arrow.set()
+        refreshClippingCursor(event.modifierFlags, at: event.locationInWindow)
+        window?.invalidateCursorRects(for: self)
+    }
 
     /// Cmd-A selects the whole canvas, as Select > All does, even with the Layers panel just clicked — never every layer.
     /// A layer's name being edited keeps its own Select All: its field editor answers first.
@@ -614,6 +644,7 @@ final class LayerTableView: NSTableView {
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        middleScrollY = nil
         if let clippingMonitor { NSEvent.removeMonitor(clippingMonitor); self.clippingMonitor = nil }
         if window != nil {
             clippingMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
@@ -632,6 +663,7 @@ final class LayerTableView: NSTableView {
     /// tool's cursor followed the mouse in. `location` is in window coordinates; without one
     /// (a modifier change) the current mouse position is used.
     func refreshClippingCursor(_ flags: NSEvent.ModifierFlags, at location: NSPoint? = nil) {
+        if middleScrollY != nil { NSCursor.closedHand.set(); return }
         guard let window else { return }
         let point = convert(location ?? window.mouseLocationOutsideOfEventStream, from: nil)
         let inside = visibleRect.contains(point)
@@ -704,6 +736,9 @@ final class LayerTableView: NSTableView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         guard hit != nil else { return nil }
+        // Middle dragging belongs to the list even over thumbnails, visibility buttons and effects.
+        if let event = NSApp.currentEvent, event.buttonNumber == 2,
+           [.otherMouseDown, .otherMouseDragged, .otherMouseUp].contains(event.type) { return self }
         let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
         let local = convert(point, from: superview)
         guard flags.contains(.option), !flags.contains(.command),

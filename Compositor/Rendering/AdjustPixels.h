@@ -59,6 +59,11 @@ void camera_raw_statistics(const uint8_t *rgba, size_t width, size_t height, siz
 // it with a shadow-clip view (clipped channels dark on white). Alpha is kept.
 void adjust_camera_raw(uint8_t *rgba, size_t width, size_t height, size_t stride, const float *table, int grid,
                        int clipping);
+// The Metal lookup's supported table domain. The original CPU path handles other tables.
+int camera_raw_lookup_is_valid(const float *table, int grid);
+// Resolve GPU pixels near a rounding boundary with the original double-precision composed lookup.
+void camera_raw_repair_lookup(uint8_t *result, const uint8_t *source, const uint8_t *uncertain,
+                               size_t width, size_t height, size_t stride, const float *table, int grid);
 // Camera Raw Effects after Light and Color. Texture is a fine local contrast, Clarity a broader one.
 // Dehaze raises contrast and saturation when positive and lifts the shadows when negative. Glow, its
 // range, spread and warmth do nothing until `glow` is above zero: styles are 0 diffusion, 1 bloom,

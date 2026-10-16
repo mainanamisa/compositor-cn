@@ -450,6 +450,32 @@ void adjust_camera_raw(uint8_t *rgba, size_t width, size_t height, size_t stride
     } });
 }
 
+int camera_raw_lookup_is_valid(const float *table, int grid) {
+    if (!table || grid != 33) return 0;
+    size_t count = (size_t)grid * grid * grid * 3;
+    for (size_t i = 0; i < count; ++i) {
+        if (!isfinite(table[i]) || table[i] < 0 || table[i] > 1) return 0;
+    }
+    return 1;
+}
+
+void camera_raw_repair_lookup(uint8_t *result, const uint8_t *source, const uint8_t *uncertain,
+                               size_t width, size_t height, size_t stride, const float *table, int grid) {
+    in_bands(height, ^(size_t first, size_t last) { for (size_t y = first; y < last; ++y) {
+        for (size_t x = 0; x < width; ++x) {
+            if (!uncertain[y * width + x]) continue;
+            const uint8_t *p = source + y * stride + x * 4;
+            double alpha = p[3];
+            if (!alpha) continue;
+            double r = fmin(255.0, p[0] * 255.0 / alpha) / 255.0;
+            double g = fmin(255.0, p[1] * 255.0 / alpha) / 255.0;
+            double b = fmin(255.0, p[2] * 255.0 / alpha) / 255.0;
+            composed_lookup(table, grid, &r, &g, &b);
+            write_premultiplied(result + y * stride + x * 4, r, g, b, alpha);
+        }
+    } });
+}
+
 static size_t clamped_index(int index, size_t limit) {
     if (index < 0) return 0;
     if ((size_t)index >= limit) return limit - 1;
