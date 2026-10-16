@@ -206,7 +206,7 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
     /// `brightness` is what the adaptive sliders read from the picture, when it's known already (a preview's source,
     /// measured once for the session); nil measures it here.
     func apply(_ image: CGImage, clipping: CameraRawClipping? = nil, scale: CGFloat = 1, seed: UInt32 = 0, visualizePointColor: Int = -1,
-               sharpenMask: Bool = false, brightness known: CameraRawTables.Brightness? = nil) throws -> CGImage {
+               sharpenMask: Bool = false, brightness known: CameraRawTables.Brightness? = nil, usesGPU: Bool = false) throws -> CGImage {
         let settings = normalized
         if settings.isIdentity && clipping == nil && visualizePointColor < 0 && !sharpenMask { return image }
         guard settings.isValid else { throw ProjectError.invalid }
@@ -224,6 +224,12 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
         if clipping == nil && !sharpenMask && visualizePointColor < 0 && settings.adjustsGeometry {
             source = try settings.geometry.apply(source)
         }
+        func applyTable(_ table: [Float]?, pixels: UnsafeMutablePointer<UInt8>, width: Int, height: Int, stride: Int, clipping: Int32) {
+            if usesGPU, clipping == 0, let table,
+               MetalCameraRawLookup.shared?.apply(pixels, width: width, height: height, rowBytes: stride,
+                                                 table: table, grid: CameraRawTables.grid) == true { return }
+            adjust_camera_raw(pixels, width, height, stride, table, Int32(CameraRawTables.grid), clipping)
+        }
         return try ImageAdjustmentPixels.run(source) { pixels, width, height, stride in
             let adaptive = settings.contrast != 0 || settings.highlights != 0
             let brightness = adaptive
@@ -236,7 +242,7 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
             let shadows = settings.shadows != 0 && CameraRawShadows.tables != nil
             if shadows {
                 if let before = CameraRawTables.compose(CameraRawTables.stages(for: settings, brightness: brightness, part: .beforeShadows)) {
-                    adjust_camera_raw(pixels, width, height, stride, before, Int32(CameraRawTables.grid), 0)
+                    applyTable(before, pixels: pixels, width: width, height: height, stride: stride, clipping: 0)
                 }
                 CameraRawShadows.apply(settings.shadows, pixels: pixels, width: width, height: height, stride: stride, scale: pixelScale)
             }
@@ -244,7 +250,7 @@ nonisolated struct CameraRawSettings: Equatable, Sendable {
                                                                        part: shadows ? .afterShadows : nil))
             if foldsColor && colorAdjusts { table = settings.foldingColor(into: table) }
             if table != nil || clipping != nil {
-                adjust_camera_raw(pixels, width, height, stride, table, Int32(CameraRawTables.grid), mode)
+                applyTable(table, pixels: pixels, width: width, height: height, stride: stride, clipping: Int32(mode))
             }
             if paintColor { settings.applyCurveColor(pixels, width: width, height: height, stride: stride, visualize: visualizePointColor) }
             if paintEffects {
@@ -338,14 +344,15 @@ nonisolated struct CameraRawScope: Equatable, Sendable {
     }
 
     /// Counts the graded image. Fully transparent pixels are skipped.
-    /// The histogram and vectorscope from every other pixel each way, plenty for a scope drawn to its peak, read
-    /// straight from the image's bytes when they're already premultiplied RGBA.
+    /// Sample every fourth pixel each way up to 4 megapixels, every eighth above that. Read straight from the
+    /// image's bytes when they're already premultiplied RGBA; this does not affect the grade or clipping paint.
     static func make(_ image: CGImage) -> Self? {
         guard image.width > 0, image.height > 0 else { return nil }
+        let step = image.width * image.height <= 4_000_000 ? 4 : 8
         var bins = Array(repeating: 0.0, count: binCount * 3)
         var scope = Array(repeating: 0.0, count: scopeSide * scopeSide)
         func measure(_ bytes: UnsafePointer<UInt8>, _ stride: Int) {
-            camera_raw_scope(bytes, image.width, image.height, stride, 2, &bins, &scope, Int32(scopeSide))
+            camera_raw_scope(bytes, image.width, image.height, stride, Int32(step), &bins, &scope, Int32(scopeSide))
         }
         let info = CGBitmapInfo(rawValue: image.bitmapInfo.rawValue)
         if image.bitsPerPixel == 32, image.bitsPerComponent == 8, image.alphaInfo == .premultipliedLast,

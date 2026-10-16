@@ -16,11 +16,49 @@ nonisolated enum ShapeKind: String, CaseIterable, Codable, Sendable {
     /// The shape filling `rect`. A rectangle's corners round by `cornerRadius`, at most half its shorter
     /// side (so a large radius makes a pill); ellipses ignore it. A line runs corner to corner and is stroked,
     /// not filled (see `linePath`).
-    func path(in rect: CGRect, cornerRadius: CGFloat = 0) -> CGPath {
+    func path(in rect: CGRect, cornerRadius: CGFloat = 0, smoothing: Bool = false) -> CGPath {
         if self == .ellipse { return CGPath(ellipseIn: rect, transform: nil) }
         let radius = min(max(0, cornerRadius), rect.width / 2, rect.height / 2)
         guard radius > 0 else { return CGPath(rect: rect, transform: nil) }
+        if self == .rectangle, smoothing {
+            return smoothedRectangle(in: rect, radius: radius)
+        }
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    /// Figma's cubic–arc–cubic corner construction at 60% smoothing (the iOS squircle match).
+    /// https://www.figma.com/blog/desperately-seeking-squircles/
+    /// Back off smoothing when the corners run out of room, keeping the requested radius.
+    private func smoothedRectangle(in rect: CGRect, radius: CGFloat) -> CGPath {
+        let smoothing = min(CGFloat(0.6), max(0, min(rect.width, rect.height) / (2 * radius) - 1))
+        guard smoothing > 0 else {
+            return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        }
+        let reach = (1 + smoothing) * radius
+        let angle = smoothing * .pi / 4
+        let tangent = radius * tan(angle / 2)
+        let c = tangent * cos(angle)
+        let d = tangent * sin(angle)
+        let arcLength = radius * sqrt(2) * sin((1 - smoothing) * .pi / 4)
+        let b = (reach - arcLength - c - d) / 3
+        let a = 2 * b
+        let path = CGMutablePath()
+        let corners = [CGPoint(x: rect.maxX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.maxY),
+                       CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.minY)]
+        for (index, corner) in corners.enumerated() {
+            let rotation = CGFloat(index) * .pi / 2
+            let transform = CGAffineTransform(translationX: corner.x, y: corner.y).rotated(by: rotation)
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y).applying(transform) }
+            let start = point(-reach, 0)
+            if index == 0 { path.move(to: start) } else { path.addLine(to: start) }
+            path.addCurve(to: point(-reach + a + b + c, d),
+                          control1: point(-reach + a, 0), control2: point(-reach + a + b, 0))
+            path.addArc(center: CGPoint(x: -radius, y: radius), radius: radius,
+                        startAngle: -.pi / 2 + angle, endAngle: -angle, clockwise: false, transform: transform)
+            path.addCurve(to: point(0, reach), control1: point(0, reach - a - b), control2: point(0, reach - a))
+        }
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -32,6 +70,8 @@ nonisolated struct LayerShapeStyle: Codable, Equatable, Sendable {
     var blue: CGFloat
     /// Document pixels, whatever size the shape is scaled to.
     var cornerRadius: CGFloat
+    /// Nil in older projects means ordinary circular corners. True uses 60% smoothing.
+    var smoothing: Bool? = nil
     /// A line's thickness, and its two ends as fractions of the layer's box (0–1), so the line lands on exactly the
     /// points it was dragged between and still redraws correctly at another size. Nil on other shapes.
     var lineWidth: CGFloat? = nil
@@ -70,6 +110,7 @@ struct ShapeDraft: Equatable {
     var end: CGPoint? = nil
     /// Document pixels, fixed when the drag starts; rectangles only.
     var cornerRadius: CGFloat = 0
+    var smoothing = false
 }
 
 extension EditorSession {
@@ -80,7 +121,8 @@ extension EditorSession {
         guard tool == .shape, canEditLayers, point.x.isFinite, point.y.isFinite else { return }
         let anchor = CGPoint(x: point.x.rounded(), y: point.y.rounded())
         shapeDraft = ShapeDraft(kind: shapeKind, anchor: anchor, rect: CGRect(origin: anchor, size: .zero),
-                                cornerRadius: shapeKind == .rectangle ? CGFloat(shapeCornerRadius) : 0)
+                                cornerRadius: shapeKind == .rectangle ? CGFloat(shapeCornerRadius) : 0,
+                                smoothing: shapeKind == .rectangle && shapeSmoothing)
     }
 
     /// The line being dragged, from where it began to where the pointer is, in document pixels.
@@ -147,10 +189,10 @@ extension EditorSession {
                         y: rect.height > 0 ? (point.y - rect.minY) / rect.height : 0.5)
             }
             let start = ends.map { unit($0.start) }, finish = ends.map { unit($0.end) }
-            let image = try Self.shapeImage(draft.kind, size: rect.size, color: foregroundColor, cornerRadius: draft.cornerRadius,
+            let image = try Self.shapeImage(draft.kind, size: rect.size, color: foregroundColor, cornerRadius: draft.cornerRadius, smoothing: draft.smoothing,
                                             lineWidth: thickness, start: start, end: finish)
             let style = LayerShapeStyle(kind: draft.kind, red: foregroundColor.red, green: foregroundColor.green,
-                                        blue: foregroundColor.blue, cornerRadius: draft.cornerRadius,
+                                        blue: foregroundColor.blue, cornerRadius: draft.cornerRadius, smoothing: draft.smoothing ? true : nil,
                                         lineWidth: draft.kind == .line ? thickness : nil, start: start, end: finish)
             addPixelLayer(image, at: rect.origin, name: nextShapeName(draft.kind), editName: draft.kind.displayName,
                           dropsSelection: false, shape: LayerShape(style: style, image: image))
@@ -172,7 +214,7 @@ extension EditorSession {
         let width = max(1, Int(layer.transform.size.width.rounded())), height = max(1, Int(layer.transform.size.height.rounded()))
         guard width != asset.image.width || height != asset.image.height, width * height <= Self.maxShapePixels,
               let image = try? Self.shapeImage(shape.style.kind, size: CGSize(width: width, height: height),
-                                               color: shape.style.color, cornerRadius: shape.style.cornerRadius,
+                                               color: shape.style.color, cornerRadius: shape.style.cornerRadius, smoothing: shape.style.smoothing == true,
                                                lineWidth: shape.style.lineWidth ?? 0,
                                                start: shape.style.start, end: shape.style.end),
               let thumbnail = try? PixelInvert.thumbnail(of: image) else { return }
@@ -197,13 +239,13 @@ extension EditorSession {
         let drawn = CGSize(width: max(1, (size.width * factor).rounded()), height: max(1, (size.height * factor).rounded()))
         if let cached = shapeTransformPreviewCache[layer.id], cached.size == drawn { return cached.image }
         guard let image = try? Self.shapeImage(.rectangle, size: drawn, color: shape.style.color,
-                                               cornerRadius: shape.style.cornerRadius * factor) else { return nil }
+                                               cornerRadius: shape.style.cornerRadius * factor, smoothing: shape.style.smoothing == true) else { return nil }
         shapeTransformPreviewCache[layer.id] = (drawn, image)
         return image
     }
 
     /// The shape filling its box, anti-aliased where it curves.
-    nonisolated static func shapeImage(_ kind: ShapeKind, size: CGSize, color: PaletteColor, cornerRadius: CGFloat = 0,
+    nonisolated static func shapeImage(_ kind: ShapeKind, size: CGSize, color: PaletteColor, cornerRadius: CGFloat = 0, smoothing: Bool = false,
                            lineWidth: CGFloat = 0, start: CGPoint? = nil, end: CGPoint? = nil) throws -> CGImage {
         let context = try BrushRaster.context(width: Int(size.width), height: Int(size.height), mask: false)
         let bounds = CGRect(origin: .zero, size: size)
@@ -225,7 +267,7 @@ extension EditorSession {
             return image
         }
         context.setFillColor(CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1))
-        context.addPath(kind.path(in: bounds, cornerRadius: cornerRadius))
+        context.addPath(kind.path(in: bounds, cornerRadius: cornerRadius, smoothing: smoothing))
         context.fillPath()
         guard let image = context.makeImage() else { throw ExportError.render }
         return image

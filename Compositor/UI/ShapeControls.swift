@@ -14,6 +14,15 @@ struct ShapeControls: View {
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
             .help("按 Shift-U（或 Tab）在矩形、椭圆和直线之间切换")
+            Button { session.openColorPicker(background: false) } label: {
+                let swatch = RoundedRectangle(cornerRadius: 3, style: .continuous)
+                swatch.fill(Color(nsColor: session.foregroundColor.nsColor))
+                    .overlay { swatch.strokeBorder(.black.opacity(0.5), lineWidth: 1) }
+                    .frame(width: 36, height: 18)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("填充颜色")
+            .help("形状以前景色填充；点按可更改")
             if session.shapeKind == .line {
                 HStack(spacing: 6) {
                     Text("宽度").scrubbable(sensitivity: 1, value: $session.shapeLineWidth, range: 1...5000)
@@ -44,17 +53,13 @@ struct ShapeControls: View {
                         .unitSuffix("px")
                 }
                 .help("将矩形的角按此像素数倒圆；0 保持直角")
-            }
-            HStack(spacing: 6) {
-                Text("填充")
-                Button { session.openColorPicker(background: false) } label: {
-                    let swatch = RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    swatch.fill(Color(nsColor: session.foregroundColor.nsColor))
-                        .overlay { swatch.strokeBorder(.black.opacity(0.5), lineWidth: 1) }
-                        .frame(width: 36, height: 18)
-                }
-                .buttonStyle(.plain)
-                .help("形状以前景色填充；点按可更改")
+                Toggle("平滑圆角", isOn: $session.shapeSmoothing)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+                    .disabled(session.shapeCornerRadius <= 0)
+                    .help(session.shapeCornerRadius <= 0
+                          ? "圆角半径大于 0 时才能使用平滑圆角。"
+                          : "使用 60% 平滑度的连续曲率圆角（squircle），与 Figma 的 iOS 设置一致")
             }
             Spacer(minLength: 0)
         }
