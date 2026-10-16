@@ -98,6 +98,9 @@ struct NewCanvasSheet: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
+            if let update = ReleaseReminder.shared.update, !ReleaseReminder.shared.dismissed {
+                UpdateReminderBanner(version: update.version)
+            }
             VStack(spacing: 14) {
                 HStack {
                     Text("新建画布").font(.title2.weight(.semibold))
@@ -185,6 +188,7 @@ struct NewCanvasSheet: View {
         .padding(28).frame(maxWidth: 500)
         .disabled(session.isImporting || session.showsBusy)
         .onAppear {
+            Task { await ReleaseReminder.shared.checkIfDue() }
             if !suggestedClipboardSize {
                 suggestedClipboardSize = true
                 if session.skipsInitialClipboardCanvasSize {
@@ -229,6 +233,30 @@ struct NewCanvasSheet: View {
             }
             .padding(12).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
         }
+    }
+}
+
+/// The update reminder at the top of the welcome sheet: a newer Chinese edition exists on GitHub.
+/// Only appears after ReleaseReminder's daily read-only check finds one; never downloads anything.
+private struct UpdateReminderBanner: View {
+    let version: String
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.tint)
+            Text("v\(version) 中文版已发布").font(.callout.weight(.medium))
+            Spacer()
+            Button("去下载") { ReleaseReminder.shared.openDownload() }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+            Button("忽略此版本") { ReleaseReminder.shared.ignore() }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help("此版本不再提醒；有更新的版本时仍会提示")
+            Button("稍后") { ReleaseReminder.shared.dismissed = true }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help("本次不再显示，下次启动时再提醒")
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("updateReminder")
     }
 }
 
