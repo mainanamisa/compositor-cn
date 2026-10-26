@@ -31,6 +31,15 @@ nonisolated enum PSDText {
         return "未安装字体“\(name)”，文字已使用系统字体绘制"
     }
 
+    /// An artboard folder's rectangle on the canvas, in pixels (its `artb` descriptor, or the older `artd`/`abdd`);
+    /// nil for an ordinary folder.
+    static func artboard(extra: [String: Data]) -> CGRect? {
+        guard let data = extra["artb"] ?? extra["artd"] ?? extra["abdd"] else { return nil }
+        var reader = Reader(data: data)
+        guard let rect = reader.descriptor(versioned: true)?.rect("artboardRect"), rect.width >= 1, rect.height >= 1 else { return nil }
+        return rect
+    }
+
     static func parse(extra: [String: Data]) -> Source? {
         guard let data = extra["TySh"] ?? extra["tySh"], data.count <= 8_000_000 else { return nil }
         var reader = Reader(data: data)

@@ -6,6 +6,10 @@ struct CompositorApp: App {
     @NSApplicationDelegateAdaptor(CompositorApplicationDelegate.self) private var applicationDelegate
     @AppStorage("navigator.visible") private var showsNavigator = false
     private var session: EditorSession { applicationDelegate.session }
+    private func filterMenuItem(_ kind: FilterKind) -> some View {
+        Button("\(kind.displayName)…") { session.beginFilter(kind) }
+            .disabled(!(kind == .vignette ? session.canVignette : session.canAdjustColors) || session.hueSaturation != nil)
+    }
     var body: some Scene {
         Window("Compositor", id: "editor") {
             ProjectWorkspaceView(applicationDelegate: applicationDelegate).roundedControls()
@@ -27,21 +31,28 @@ struct CompositorApp: App {
                     // is unavailable while an import or modal edit is active.
                     if session.textDraft != nil || session.levels != nil || session.isProjectBusy || session.showsNewDocument || session.showsImporter || session.renamingLayerID != nil || session.transformEdit?.persistent == true {
                         Button("撤销") {
-                            if NSApp.keyWindow?.firstResponder is NSTextView {
+                            if NSApp.isEditingText {
                                 NSApp.sendAction(NSSelectorFromString("undo:"), to: nil, from: nil)
                             }
                         }
                             .configuredKeyboardShortcut("z")
                         Button("重做") {
-                            if NSApp.keyWindow?.firstResponder is NSTextView {
+                            if NSApp.isEditingText {
                                 NSApp.sendAction(NSSelectorFromString("redo:"), to: nil, from: nil)
                             }
                         }
                             .configuredKeyboardShortcut("z", modifiers: [.command, .shift])
                     } else {
-                        Button(session.history.canUndo ? "撤销 \(session.history.undoName)" : "撤销") { session.undo() }
+                        // A Save or Open panel's name field undoes its own typing (see `isEditingText`).
+                        Button(session.history.canUndo ? "撤销 \(session.history.undoName)" : "撤销") {
+                            if NSApp.keyWindow is NSSavePanel { NSApp.sendAction(NSSelectorFromString("undo:"), to: nil, from: nil) }
+                            else { session.undo() }
+                        }
                             .configuredKeyboardShortcut("z").disabled(!session.canUndo)
-                        Button(session.history.canRedo ? "重做 \(session.history.redoName)" : "重做") { session.redo() }
+                        Button(session.history.canRedo ? "重做 \(session.history.redoName)" : "重做") {
+                            if NSApp.keyWindow is NSSavePanel { NSApp.sendAction(NSSelectorFromString("redo:"), to: nil, from: nil) }
+                            else { session.redo() }
+                        }
                             .configuredKeyboardShortcut("z", modifiers: [.command, .shift]).disabled(!session.canRedo)
                     }
                 }
@@ -68,7 +79,7 @@ struct CompositorApp: App {
                             .disabled(RecentProjects.shared.urls.isEmpty)
                     }
                         .disabled(!applicationDelegate.projects.canStart)
-                    Button("导入图像…") { session.showsImporter = true }
+                    Button("导入…") { session.showsImporter = true }
                         .disabled(session.levels != nil || session.showsBusy || session.isImporting || session.showsNewDocument)
                 }
                 CommandGroup(replacing: .saveItem) {
@@ -85,7 +96,7 @@ struct CompositorApp: App {
                     Button("导出 JPEG…") { Task { await applicationDelegate.projects.exportAs(start: .jpeg) } }
                         .configuredKeyboardShortcut("s", modifiers: [.command, .option, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
-                    // PNG, JPEG, HEIC, WebP, TIFF, GIF, BMP or PDF, sized and previewed; ⌥⇧⌘W, as Photoshop's Export As.
+                    // Still images or GIF timelines, sized and previewed; ⌥⇧⌘W, as Photoshop's Export As.
                     Button("导出为…") { Task { await applicationDelegate.projects.exportAs() } }
                         .configuredKeyboardShortcut("w", modifiers: [.command, .option, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
@@ -204,13 +215,13 @@ struct CompositorApp: App {
                     // (the pasteboard, the copied pixels, the busy flag) isn't observed, so a disabled state could
                     // go stale — the first Paste after a Copy used to beep until something else refreshed the menu.
                     Button("剪切") {
-                        if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
+                        if NSApp.isEditingText { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
                         else if session.selection != nil, session.canCopyPixels { Task { await session.cutSelection() } }
                         else { NSSound.beep() }
                     }
                         .configuredKeyboardShortcut("x")
                     Button("拷贝") {
-                        if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
+                        if NSApp.isEditingText { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
                         else if session.canCopyPixels || session.canCopyLayer { session.copySelection() }
                         else { NSSound.beep() }
                     }
@@ -221,7 +232,7 @@ struct CompositorApp: App {
                         // On the New canvas screen an image on the clipboard makes the canvas, even with a size field
                         // being typed in; a size copied as text still goes into the field.
                         if session.canPasteImageAsNewCanvas { Task { await session.pasteImageAsNewCanvas() } }
-                        else if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
+                        else if NSApp.isEditingText { NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
                         else if applicationDelegate.workspace.pasteCopiedLayer() { }
                         else if session.canPaste { session.paste() }
                         else { NSSound.beep() }
@@ -233,13 +244,13 @@ struct CompositorApp: App {
                     Button("键盘快捷键…") { ShortcutSettings.shared.show() }
                     // Photoshop's fill shortcuts; in a text field they keep their text meaning.
                     Button("用前景色填充") {
-                        if NSApp.keyWindow?.firstResponder is NSTextView {
+                        if NSApp.isEditingText {
                             NSApp.sendAction(#selector(NSResponder.deleteWordBackward(_:)), to: nil, from: nil)
                         } else { Task { await session.fillSelection(with: .foreground) } }
                     }
                         .configuredKeyboardShortcut(.delete, modifiers: .option).disabled(!session.canEditPixels)
                     Button("用背景色填充") {
-                        if NSApp.keyWindow?.firstResponder is NSTextView {
+                        if NSApp.isEditingText {
                             NSApp.sendAction(#selector(NSResponder.deleteToBeginningOfLine(_:)), to: nil, from: nil)
                         } else { Task { await session.fillSelection(with: .background) } }
                     }
@@ -279,7 +290,7 @@ struct CompositorApp: App {
                     Button("蒙版黑色区域") {
                         if let id = session.activeLayerID { session.loadMaskSelection(layerID: id) }
                     }
-                        .disabled(session.activeLayer?.mask == nil || !session.canEditSelection)
+                        .disabled(session.activeLayer.flatMap { session.selectedMask(for: $0) } == nil || !session.canEditSelection)
                     Divider()
                     Button("扩展…") { session.promptSelectionAmount(.expand) }
                         .disabled(!session.canModifySelection)
@@ -330,15 +341,22 @@ struct CompositorApp: App {
                         // ⌃⌘F, as in Photoshop; ⌘F is the command palette.
                         .configuredKeyboardShortcut("f", modifiers: [.command, .control]).disabled(!session.canRepeatLastFilter)
                     Divider()
-                    ForEach(FilterKind.allCases.filter { $0 != .contentAwareFill && !$0.isImageAdjustment }, id: \.self) { kind in
-                        Button("\(kind.displayName)…") { session.beginFilter(kind) }
-                            .disabled(!(kind == .vignette ? session.canVignette : session.canAdjustColors) || session.hueSaturation != nil)
-                    }
+                    // Those that can also be adjustment layers, in that menu's order, then the rest.
+                    let layered = AdjustmentKind.filters.compactMap(\.filterKind)
+                    let others = FilterKind.allCases.filter { $0 != .contentAwareFill && !$0.isImageAdjustment && !layered.contains($0) }
+                    ForEach(layered, id: \.self) { filterMenuItem($0) }
+                    Divider()
+                    ForEach(others, id: \.self) { filterMenuItem($0) }
                 }
                 CommandMenu("图层") {
                     Menu("新建调整图层") {
-                        ForEach(AdjustmentKind.allCases, id: \.self) { kind in
+                        // The Image menu's adjustments, then the Filter menu's filters.
+                        ForEach(AdjustmentKind.imageAdjustments, id: \.self) { kind in
                             Button(kind.displayName + (kind.isEditable ? "…" : "")) { session.addAdjustment(kind) }
+                        }
+                        Divider()
+                        ForEach(AdjustmentKind.filters, id: \.self) { kind in
+                            Button(kind.displayName + "…") { session.addAdjustment(kind) }
                         }
                     }.disabled(!session.canEditLayers || session.document == nil)
                     Button("编辑调整…") {
@@ -382,9 +400,21 @@ struct CompositorApp: App {
                             .disabled(!session.canTransform)
                         Button("垂直翻转图层") { session.flipLayers(horizontally: false) }
                             .disabled(!session.canTransform)
+                        Menu("对齐") {
+                            ForEach(LayerAlignment.allCases, id: \.self) { alignment in
+                                Button(alignment.displayName) { session.alignLayers(alignment) }
+                            }
+                        }
+                            .disabled(!session.canAlignLayers)
+                        Menu("分布") {
+                            ForEach(LayerDistribution.allCases, id: \.self) { distribution in
+                                Button(distribution.displayName) { session.distributeLayers(distribution) }
+                            }
+                        }
+                            .disabled(!session.canDistributeLayers)
                     }
                     Divider()
-                    Button(session.selectedEffect != nil ? "删除" + session.selectedEffect!.kind.displayName : session.isMaskSelected && session.activeLayer?.mask != nil ? "删除图层蒙版" : session.selectedLayerIDs.count > 1 ? "删除多个图层" : "删除图层") {
+                    Button(session.selectedEffect != nil ? "删除" + session.selectedEffect!.kind.displayName : session.isMaskSelected && session.activeLayer.flatMap({ session.selectedMask(for: $0) }) != nil ? "删除图层蒙版" : session.selectedLayerIDs.count > 1 ? "删除多个图层" : "删除图层") {
                         session.deleteLayerOrMask()
                     }
                         .disabled(!session.canEditLayers || session.activeLayer == nil)
@@ -424,11 +454,14 @@ extension FilterKind {
         case .gaussianBlur: return "高斯模糊"
         case .motionBlur: return "动感模糊"
         case .progressiveBlur: return "渐进模糊"
+        case .sharpen: return "锐化"
         case .addNoise: return "添加杂色"
         case .vignette: return "暗角"
         case .bloomGlow: return "泛光/辉光"
         case .dither: return "抖动"
         case .scanlines: return "扫描线"
+        case .rgbSplit: return "RGB 分离"
+        case .lensEffects: return "镜头效果"
         case .tonalContrast: return "色调对比度"
         case .lensCorrection: return "镜头校正"
         case .cameraRaw: return "Camera Raw 滤镜"
@@ -459,6 +492,13 @@ extension AdjustmentKind {
         case .invert: return "反相"
         case .blackWhite: return "黑白"
         case .colorBalance: return "色彩平衡"
+        case .progressiveBlur: return "渐进模糊"
+        case .bloomGlow: return "泛光/辉光"
+        case .rgbSplit: return "RGB 分离"
+        case .vignette: return "暗角"
+        case .lensEffects: return "镜头效果"
+        case .tonalContrast: return "色调对比度"
+        case .sharpen: return "锐化"
         }
     }
 }
@@ -484,4 +524,35 @@ extension EditorSession.SelectionAmountOperation {
         case .feather: return "羽化"
         }
     }
+}
+
+extension LayerAlignment {
+    var displayName: String {
+        switch self {
+        case .left: return "左边"
+        case .horizontalCenter: return "水平居中"
+        case .right: return "右边"
+        case .top: return "顶边"
+        case .verticalCenter: return "垂直居中"
+        case .bottom: return "底边"
+        }
+    }
+}
+
+extension LayerDistribution {
+    var displayName: String {
+        switch self {
+        case .horizontalCenters: return "水平居中"
+        case .verticalCenters: return "垂直居中"
+        case .horizontalSpacing: return "水平间距"
+        case .verticalSpacing: return "垂直间距"
+        }
+    }
+}
+
+extension NSApplication {
+    /// Whether the keyboard is in a text field, so Cut, Copy, Paste, Undo and the fill shortcuts act on its text rather
+    /// than the canvas. A Save or Open panel counts: the sandbox runs it in another process, so its file name field
+    /// isn't a text view of ours, and copying or pasting a name there reached the canvas instead.
+    var isEditingText: Bool { keyWindow?.firstResponder is NSTextView || keyWindow is NSSavePanel }
 }

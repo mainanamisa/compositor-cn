@@ -107,6 +107,30 @@ struct FilterSheet: View {
                     .help("线条终点及之外的模糊量")
                 Toggle("反转", isOn: flag(\.progressiveInverted))
                     .help("交换起点和终点：起点模糊、向终点逐渐清晰")
+            case .rgbSplit:
+                HStack(spacing: 10) {
+                    Text("形状")
+                    Picker("形状", selection: flag(\.rgbSplitRadial)) {
+                        Text("线性").tag(false)
+                        Text("径向").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("线性沿一个方向错位颜色；径向从中心向外错位，中心保持清晰")
+                }
+                if settings.rgbSplitRadial {
+                    Text("在画布上点按或拖动来移动中心")
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                control("距离", \.rgbSplitDistance, range: 0...200, unit: "px", decimals: 0, logarithmic: false)
+                    .help("颜色错开的距离：红色偏向一侧，蓝色偏向另一侧")
+                control("模糊", \.rgbSplitBlur, range: 0...400, unit: "px", decimals: 0, logarithmic: false)
+                    .help("沿错位方向把颜色拖成条纹")
+                if !settings.rgbSplitRadial {
+                    control("角度", \.rgbSplitAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+                        .help("颜色错开的方向")
+                }
+            case .lensEffects:
+                lensEffectsControls
             case .motionBlur:
                 control("角度", \.angle, range: -90...90, unit: "°", decimals: 0, logarithmic: false)
                 control("距离", \.distance, range: 1...2000, unit: "px", decimals: 0, logarithmic: true)
@@ -148,6 +172,11 @@ struct FilterSheet: View {
                 control("羽化", \.vignetteFeather, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                 control("高光", \.vignetteHighlights, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                     .help("保护边缘附近的亮部区域")
+            case .sharpen:
+                control("数量", \.sharpenAmount, range: 0...300, unit: "%", decimals: 0, logarithmic: false)
+                    .help("强化边缘和细节的程度")
+                control("半径", \.sharpenRadius, range: 0.1...20, unit: "px", decimals: 1, logarithmic: true)
+                    .help("锐化细节的精细程度：小值突出清晰纹理，大值效果更强烈")
             case .bloomGlow:
                 control("数量", \.bloomAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                 control("半径", \.bloomRadius, range: 1...150, unit: "px", decimals: 0, logarithmic: true)
@@ -173,6 +202,15 @@ struct FilterSheet: View {
             Divider()
             HStack {
                 Button("取消") { session.cancelFilter() }.configuredNativeShortcut(.escape)
+                // The utility beside the effect: the layer's own channels, unshifted, as layers for Export As › Channel Pack.
+                // Not on an RGB Split adjustment layer, which has no pixels of its own to split.
+                if edit?.kind == .rgbSplit, session.adjustmentOriginal == nil {
+                    Button("拆分为图层") {
+                        session.cancelFilter()
+                        session.splitChannels()
+                    }
+                    .help("将图层的原始通道拆分为红、绿、蓝和 Alpha 四个灰度图层，供「导出为 › Channel Pack」使用。完全透明像素下的颜色无法恢复")
+                }
                 Spacer()
                 // While the preview is being worked out (Remove Background's mask, Content-Aware Fill) OK waits, so
                 // the panel says what it is waiting for rather than showing a disabled button and nothing else.
@@ -324,6 +362,81 @@ struct FilterSheet: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+
+    /// Lens Effects: which effect, then its own settings.
+    @ViewBuilder private var lensEffectsControls: some View {
+        HStack(spacing: 10) {
+            Text("效果")
+            Picker("效果", selection: Binding(get: { settings.lens.effect }, set: { new in update { $0.lens.effect = new } })) {
+                ForEach(LensEffect.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .labelsHidden().fixedSize()
+        }
+        switch settings.lens.effect {
+        case .anamorphicFlare:
+            control("数量", \.lens.flareAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("长度", \.lens.flareLength, range: 1...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光斑条纹在画面中延伸的长度")
+            control("阈值", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光源要多亮才会产生光斑；接近 100 时只有最大、最亮的光点")
+            control("蓝色", \.lens.flareBlue, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("镜片镀膜使条纹沿长度偏蓝的程度；为 0 时保留光源本身的颜色")
+        case .starburst:
+            control("数量", \.lens.starAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("长度", \.lens.starLength, range: 2...40, unit: "%", decimals: 0, logarithmic: false)
+                .help("星芒延伸的长度")
+            control("阈值", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光源要多亮才会产生星芒；接近 100 时只有最大、最亮的光点")
+            control("角度", \.lens.starAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+            HStack(spacing: 10) {
+                Text("星芒数")
+                Picker("星芒数", selection: Binding(get: { settings.lens.starPoints }, set: { new in update { $0.lens.starPoints = new } })) {
+                    ForEach(LensEffectSettings.starPointChoices, id: \.self) { Text("\($0)").tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("每个光源的星芒数量，如同镜头光圈叶片形成的效果")
+            }
+        case .mist:
+            control("强度", \.lens.mistStrength, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光线散射的程度：亮部周围形成柔和光晕，暗部被轻轻提亮")
+            control("大小", \.lens.mistSize, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光线扩散的范围")
+        case .prism:
+            control("数量", \.lens.prismAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("重影数", \.lens.prismCopies, range: 1...8, unit: "", decimals: 0, logarithmic: false)
+                .help("画面重复的次数，每次更淡")
+            control("偏移", \.lens.prismOffset, range: 0...50, unit: "%", decimals: 0, logarithmic: false)
+                .help("各重影之间的距离")
+            control("角度", \.lens.prismAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+                .help("重影排列的方向")
+            control("模糊", \.lens.prismBlur, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("柔化重影，推得越远越模糊")
+            HStack(spacing: 10) {
+                Text("方向")
+                Picker("方向", selection: Binding(get: { settings.lens.prismBothWays }, set: { new in update { $0.lens.prismBothWays = new } })) {
+                    Text("单侧").tag(false)
+                    Text("双侧").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("重影只出现在画面一侧，或向两侧展开")
+            }
+        case .bokeh:
+            control("大小", \.lens.bokehRadius, range: LensEffectSettings.bokehSizes, unit: "%", decimals: 1, logarithmic: false)
+                .help("失焦程度：每个光斑的大小")
+            control("亮度", \.lens.bokehBrightness, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光点展开成光斑的亮度")
+            control("光环", \.lens.bokehRing, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光斑边缘聚光的程度，类似某些镜头的成像")
+            HStack(spacing: 10) {
+                Text("形状")
+                Picker("形状", selection: Binding(get: { settings.lens.bokehShape }, set: { new in update { $0.lens.bokehShape = new } })) {
+                    ForEach(BokehShape.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .labelsHidden().fixedSize()
+                .help("光圈的形状：全开时为圆形，光圈叶片形成六边形，变形宽银幕镜头为椭圆，或边缘处呈猫眼形")
+            }
+        }
     }
 
     private func flag(_ key: WritableKeyPath<FilterSettings, Bool>) -> Binding<Bool> {

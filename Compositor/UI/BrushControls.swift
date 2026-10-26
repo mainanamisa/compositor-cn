@@ -51,6 +51,14 @@ struct BrushControls: View {
                     .unitSuffix("px")
                 // Remove paints only a mask for the model: size is all it takes.
                 if session.tool != .remove {
+                // A pen's pressure, as Photoshop's buttons beside Size and Opacity: only once a tablet pen has
+                // been used since the app opened.
+                if session.tool == .brush, PenInput.shared.seen {
+                    Toggle(isOn: $session.brushSettings.pressureSize) { Image(systemName: "pencil.tip.crop.circle") }
+                        .toggleStyle(PenPressureToggleStyle())
+                        .help("画笔压力控制大小：轻触画出更细的线条")
+                        .accessibilityLabel("压力控制大小")
+                }
                 Text("硬度").scrubbable(sensitivity: 0.01, value: $session.brushSettings.hardness, range: 0...1)
                 Slider(value: $session.brushSettings.hardness, in: 0...1).frame(width: 100)
                 TextField("硬度", value: Binding<Double>(get: { Double(session.brushSettings.hardness * 100) },
@@ -71,6 +79,12 @@ struct BrushControls: View {
                                 change: { session.brushSettings.opacity = CGFloat(min(100, max(1, $0)) / 100) })
                     .help("按 1–9 设置 10–90%，按 0 设置 100%")
                     .unitSuffix("%")
+                if session.tool == .brush, PenInput.shared.seen {
+                    Toggle(isOn: $session.brushSettings.pressureOpacity) { Image(systemName: "pencil.tip.crop.circle") }
+                        .toggleStyle(PenPressureToggleStyle())
+                        .help("画笔压力控制不透明度：轻触画得更淡，最高为画笔的不透明度")
+                        .accessibilityLabel("压力控制不透明度")
+                }
                 }
                 // Blur softens by a radius of its own, apart from how strongly it lays the softening down.
                 if session.tool == .blur, session.blurMode == .blur {
@@ -134,6 +148,23 @@ struct BrushControls: View {
         }
         .padding(.horizontal, 18).toolHeaderBar().releasesFocusOnCommit(session)
         .disabled(session.showsBusy)
+    }
+}
+
+/// A pressure button: square, the height of the field beside it, which it sits close to.
+private struct PenPressureToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+            configuration.label
+                .foregroundStyle(configuration.isOn ? .white : .primary)
+                .frame(width: 22, height: 22)
+                .background(configuration.isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary), in: shape)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, -6)
+        .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
     }
 }
 

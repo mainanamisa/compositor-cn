@@ -169,6 +169,24 @@ struct ProjectTests {
         #expect(session.document?.layers.count == 1)
     }
 
+    @Test func projectsFromEarlierReleasesStillOpen() async throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = EditorSession()
+        session.createDocument(width: 100, height: 80)
+        session.addBlankLayer()
+        let snapshot = try #require(session.projectSnapshot())
+        let url = root.appendingPathComponent("Earlier.comp")
+        try await ProjectStore.shared.save(snapshot, to: url)
+        let metadata = url.appendingPathComponent("manifest.json")
+        for version in [15, 16] {
+            var earlier = snapshot.manifest
+            earlier.version = version
+            try JSONEncoder().encode(earlier).write(to: metadata)
+            _ = try await ProjectStore.shared.load(from: url)
+        }
+    }
+
     @Test func missingEmbeddedImageIsRejected() async throws {
         let root = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -124,6 +124,32 @@ struct ContentView: View {
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("editor")) } action: { canvasFrame = $0 }
                     }
+                    if !session.canvasOnly,
+                       let gifLayerID = session.gifTimelineLayerID,
+                       session.activeLayerID == gifLayerID,
+                       session.document?.layers.contains(where: { $0.id == gifLayerID }) == true,
+                       !session.gifTimelineFrames.isEmpty {
+                        Divider()
+                        GIFTimeline(frames: session.gifTimelineFrames,
+                                    selectedFrameIndex: session.gifTimelineSelectedFrameIndex,
+                                    isPlaying: session.gifTimelineIsPlaying,
+                                    canPlay: session.gifTimelineCanPlay,
+                                    timing: session.gifTimelineTiming,
+                                    canEditFrames: session.gifTimelineCanEditFrames,
+                                    canEditTiming: session.gifTimelineCanEditTiming,
+                                    onSelectFrame: { index in
+                                        guard session.activeLayerID == gifLayerID else { return }
+                                        await session.selectGIFTimelineFrame(index)
+                                    },
+                                    onTogglePlayback: { session.toggleGIFPlayback(for: gifLayerID) },
+                                    onStopPlayback: { session.stopGIFPlayback(for: gifLayerID) },
+                                    onChangeTiming: { session.setGIFFrameTiming($0, for: gifLayerID) },
+                                    onDuplicateFrame: { await session.duplicateGIFFrame(at: $0, for: gifLayerID) },
+                                    onDeleteFrame: { await session.deleteGIFFrames(at: [$0], for: gifLayerID) })
+                            .id(gifLayerID)
+                            .frame(height: 110)
+                            .releasesFocusOnCommit(session)
+                    }
                 }
                 if !session.canvasOnly {
                     PanelResizeEdge(width: $layersPanelWidth, range: LayersPanel.widths)

@@ -7,7 +7,7 @@ extension UTType {
     static let compositorProject = UTType(exportedAs: "com.compositor.project", conformingTo: .package)
     nonisolated static let photoshopImage = UTType(importedAs: "com.adobe.photoshop-image")
     nonisolated static let photoshopLargeImage = UTType(importedAs: "com.adobe.photoshop-large-image")
-    static let importableImages: [UTType] = [.jpeg, .png, .heic, .heif, .tiff, .webP, .openEXR, .radianceHDR, .photoshopImage,
+    static let importableImages: [UTType] = [.jpeg, .png, .gif, .heic, .heif, .tiff, .webP, .openEXR, .radianceHDR, .photoshopImage,
                                              .photoshopLargeImage, .rawImage, .svg, .pdf]
     /// OpenEXR, the format renders (Blender's among them) keep light brighter than white in.
     static let openEXR = UTType("com.ilm.openexr-image") ?? .image
@@ -17,10 +17,11 @@ extension UTType {
 
 nonisolated struct ProjectManifest: Codable, Sendable {
     /// The format version new saves write.
-    static let current = 14
-    /// Every version `load` accepts. The package-header check, the manifest check and the error
-    /// message all read this, so they cannot drift apart when `current` is bumped.
-    static let supported = 1...ProjectManifest.current
+    static let current = 19
+    /// Every version `load` accepts: each one a release has written (1 through `current`), and 27 from the
+    /// GIF branch's own builds. Leaving out 15 and 16 once locked out projects saved by 1.5.4 and 1.5.5.
+    /// The package-header and manifest checks both read this, so they can't drift apart when `current` is bumped.
+    static let supported = Set(1...current).union([27])
 
     var format = "com.compositor.project"
     var version = ProjectManifest.current
@@ -58,12 +59,85 @@ nonisolated struct ProjectLayerRecord: Codable, Sendable {
     /// The stroke and drop shadow drawn around the layer.
     var effects: LayerEffects? = nil
     var text: LayerTextStyle? = nil
+    /// The embedded animation and masks scoped to individual frames. Missing before version 27.
+    var gif: ProjectGIFRecord? = nil
+}
+
+nonisolated struct ProjectGIFRecord: Codable, Sendable {
+    let sourceFile: String
+    let selectedFrameIndex: Int
+    var geometry: GIFFrameGeometry? = nil
+    var framePixels: [ProjectGIFPixelsRecord] = []
+    var deletedFrameIndices: [Int] = []
+    var frameOrder: [GIFFrameReference]? = nil
+    var timing: ProjectGIFTimingRecord? = nil
+
+    init(sourceFile: String, selectedFrameIndex: Int, geometry: GIFFrameGeometry? = nil,
+         framePixels: [ProjectGIFPixelsRecord] = [],
+         deletedFrameIndices: [Int] = [], frameOrder: [GIFFrameReference]? = nil, timing: ProjectGIFTimingRecord? = nil) {
+        self.sourceFile = sourceFile
+        self.selectedFrameIndex = selectedFrameIndex
+        self.geometry = geometry
+        self.framePixels = framePixels
+        self.deletedFrameIndices = deletedFrameIndices
+        self.frameOrder = frameOrder
+        self.timing = timing
+    }
+
+    private enum CodingKeys: String, CodingKey { case sourceFile, selectedFrameIndex, geometry, framePixels, deletedFrameIndices, frameOrder, timing }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        sourceFile = try values.decode(String.self, forKey: .sourceFile)
+        selectedFrameIndex = try values.decode(Int.self, forKey: .selectedFrameIndex)
+        geometry = try values.decodeIfPresent(GIFFrameGeometry.self, forKey: .geometry)
+        framePixels = try values.decodeIfPresent([ProjectGIFPixelsRecord].self, forKey: .framePixels) ?? []
+        deletedFrameIndices = try values.decodeIfPresent([Int].self, forKey: .deletedFrameIndices) ?? []
+        frameOrder = try values.decodeIfPresent([GIFFrameReference].self, forKey: .frameOrder)
+        timing = try values.decodeIfPresent(ProjectGIFTimingRecord.self, forKey: .timing)
+    }
+}
+
+nonisolated struct ProjectGIFTimingRecord: Codable, Sendable {
+    var mode: GIFDelayMode
+    var uniformDelay: TimeInterval
+    var frameDelays: [ProjectGIFDelayRecord]
+
+    init(_ timing: GIFFrameTiming) {
+        mode = timing.mode
+        uniformDelay = timing.uniformDelay
+        frameDelays = timing.frameDelays.keys.sorted().map { ProjectGIFDelayRecord(index: $0, duration: timing.frameDelays[$0]!) }
+    }
+
+    var frameTiming: GIFFrameTiming {
+        var timing = GIFFrameTiming(mode: mode, uniformDelay: uniformDelay)
+        for record in frameDelays { timing.frameDelays[record.index] = record.duration }
+        return timing
+    }
+
+    var isValid: Bool {
+        frameDelays.count <= GIFTimelineLimits.maxFrames && frameTiming.isValid
+            && Set(frameDelays.map(\.index)).count == frameDelays.count
+            && frameDelays.allSatisfy { (0..<GIFTimelineLimits.frameIdentityLimit).contains($0.index) }
+    }
+}
+
+nonisolated struct ProjectGIFDelayRecord: Codable, Sendable {
+    let index: Int
+    let duration: TimeInterval
+}
+
+nonisolated struct ProjectGIFPixelsRecord: Codable, Sendable {
+    let index: Int
+    let imageFile: String
 }
 
 nonisolated struct ProjectSnapshot: @unchecked Sendable {
+    // Snapshot dictionaries are value copies; their CGImages and GIF sources are immutable across actors.
     let manifest: ProjectManifest
     let images: [UUID: ImportedImage]
     var masks: [UUID: ImportedImage] = [:]
+    var animations: [UUID: GIFAnimation] = [:]
 }
 
 nonisolated enum ProjectError: LocalizedError {
@@ -71,7 +145,7 @@ nonisolated enum ProjectError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalid: "这不是有效的 Compositor 项目，或其元数据已损坏"
-        case .version(let version): "此项目使用格式版本 \(version)。本应用支持版本 \(ProjectManifest.supported.lowerBound)–\(ProjectManifest.supported.upperBound)"
+        case .version(let version): "此项目使用格式版本 \(version)。本应用支持版本 1–\(ProjectManifest.current) 和 27"
         case .missingImage: "项目内的图像缺失或已损坏，当前文档未被替换"
         case .tooLarge: "此项目超出支持的画布、图层、文件大小或 \(DocumentLimits.documentBudgetMegapixels) 百万像素文档限制"
         case .encode: "图像无法存储，之前的项目未被替换"
@@ -88,8 +162,11 @@ actor ProjectStore {
 
     func save(_ snapshot: ProjectSnapshot, to url: URL, quickLook: QuickLookImages? = nil) throws {
         try validate(snapshot.manifest)
+        let animatedIDs = Set(snapshot.manifest.layers.filter { $0.gif != nil }.map(\.id))
+        guard Set(snapshot.animations.keys) == animatedIDs else { throw ProjectError.invalid }
         var images: [String: FileWrapper] = [:]
         var pixels = 0, maskPixels = 0
+        var gifBytes = 0, thumbnailPixels = 0
         for layer in snapshot.manifest.layers {
           for isMask in [false, true] {
             guard let filename = isMask ? layer.maskFile : layer.imageFile else { continue }
@@ -110,8 +187,22 @@ actor ProjectStore {
                 guard CGImageDestinationFinalize(destination) else { throw ProjectError.encode }
                 return data as Data
             }
+            guard data.count <= 512 * 1024 * 1024 else { throw ProjectError.tooLarge }
+            if layer.gif != nil, !isMask, asset.deep != nil { throw ProjectError.invalid }
             images[filename] = FileWrapper(regularFileWithContents: data)
           }
+            guard let gif = layer.gif else { continue }
+            guard let animation = snapshot.animations[layer.id], let image = snapshot.images[layer.id]?.image else {
+                throw ProjectError.missingImage
+            }
+            try validateAnimation(animation, record: gif, image: image)
+            try checkGIFBudget(animation.source, bytes: &gifBytes, thumbnails: &thumbnailPixels)
+            images[gif.sourceFile] = FileWrapper(regularFileWithContents: animation.source.data)
+            for record in gif.framePixels {
+                guard let asset = animation.framePixels[record.index] else { throw ProjectError.missingImage }
+                try checkSize(width: asset.image.width, height: asset.image.height, used: &pixels)
+                images[record.imageFile] = FileWrapper(regularFileWithContents: try pngData(asset.image))
+            }
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -167,7 +258,9 @@ actor ProjectStore {
         try validate(manifest)
         var images: [UUID: ImportedImage] = [:]
         var masks: [UUID: ImportedImage] = [:]
+        var animations: [UUID: GIFAnimation] = [:]
         var pixels = 0, maskPixels = 0
+        var gifBytes = 0, thumbnailPixels = 0
         for layer in manifest.layers {
           for isMask in [false, true] {
             guard let filename = isMask ? layer.maskFile : layer.imageFile else { continue }
@@ -204,10 +297,33 @@ actor ProjectStore {
                 if depth == 16 { return try DeepLayer.asset(image, name: layer.name) }
                 return ImportedImage(image: image, thumbnail: thumbnail, name: layer.name)
             }
+            if layer.gif != nil, !isMask, asset.deep != nil { throw ProjectError.invalid }
             if isMask { masks[layer.id] = asset } else { images[layer.id] = asset }
           }
+            guard let gif = layer.gif else { continue }
+            let file = url.appendingPathComponent("images").appendingPathComponent(gif.sourceFile)
+            let byteCount = try checkFile(file, inside: url, maximumBytes: GIFSource.byteLimit)
+            guard byteCount <= GIFSource.totalByteLimit - gifBytes else { throw ProjectError.tooLarge }
+            let source: GIFSource
+            do { source = try GIFDecoder.source(Data(contentsOf: file), name: layer.name) }
+            catch ImageImportError.tooLarge { throw ProjectError.tooLarge }
+            catch ImageImportError.tooManyFrames { throw ProjectError.tooLarge }
+            catch { throw ProjectError.missingImage }
+            var animation = GIFAnimation(source: source, selectedFrameIndex: gif.selectedFrameIndex, geometry: gif.geometry)
+            animation.deletedFrameIndices = Set(gif.deletedFrameIndices)
+            animation.frameOrder = gif.frameOrder
+            animation.timing = gif.timing?.frameTiming ?? GIFFrameTiming()
+            guard let image = images[layer.id]?.image else { throw ProjectError.missingImage }
+            for record in gif.framePixels {
+                let pixelsFile = url.appendingPathComponent("images").appendingPathComponent(record.imageFile)
+                try checkFile(pixelsFile, inside: url, maximumBytes: 512 * 1024 * 1024)
+                animation.framePixels[record.index] = try readPNG(pixelsFile, name: layer.name, isMask: false, used: &pixels)
+            }
+            try validateAnimation(animation, record: gif, image: image)
+            try checkGIFBudget(source, bytes: &gifBytes, thumbnails: &thumbnailPixels)
+            animations[layer.id] = animation
         }
-        return ProjectSnapshot(manifest: manifest, images: images, masks: masks)
+        return ProjectSnapshot(manifest: manifest, images: images, masks: masks, animations: animations)
     }
 
     private func validate(_ manifest: ProjectManifest) throws {
@@ -223,6 +339,46 @@ actor ProjectStore {
             if layer.shape?.smoothing == true {
                 guard manifest.version >= 14 else { throw ProjectError.invalid }
             }
+            if let gif = layer.gif {
+                let identityLimit = manifest.version >= 17 ? GIFTimelineLimits.frameIdentityLimit : GIFTimelineLimits.maxFrames
+                guard manifest.version >= 17, layer.imageFile != nil, layer.isGroup != true,
+                      layer.adjustment == nil, layer.text == nil, layer.shape == nil,
+                      gif.sourceFile == "\(layer.id.uuidString).gif",
+                      (0..<identityLimit).contains(gif.selectedFrameIndex),
+                      gif.geometry.map(\.isValid) ?? true else { throw ProjectError.invalid }
+                var indices = Set<Int>()
+                guard gif.deletedFrameIndices.isEmpty || manifest.version >= 17,
+                      gif.deletedFrameIndices.count <= GIFTimelineLimits.maxFrames else { throw ProjectError.invalid }
+                for index in gif.deletedFrameIndices {
+                    guard (0..<GIFTimelineLimits.maxFrames).contains(index), indices.insert(index).inserted else {
+                        throw ProjectError.invalid
+                    }
+                }
+                indices.removeAll()
+                if let order = gif.frameOrder {
+                    guard manifest.version >= 17, !order.isEmpty, order.count <= GIFTimelineLimits.maxFrames else {
+                        throw ProjectError.invalid
+                    }
+                    for frame in order {
+                        guard (0..<identityLimit).contains(frame.index), indices.insert(frame.index).inserted,
+                              (0..<GIFTimelineLimits.maxFrames).contains(frame.sourceIndex) else { throw ProjectError.invalid }
+                    }
+                    indices.removeAll()
+                }
+                if let timing = gif.timing {
+                    guard manifest.version >= 17, timing.isValid else { throw ProjectError.invalid }
+                }
+                guard gif.framePixels.count <= GIFTimelineLimits.maxFrames else { throw ProjectError.invalid }
+                indices.removeAll()
+                for pixels in gif.framePixels {
+                    guard (0..<identityLimit).contains(pixels.index), indices.insert(pixels.index).inserted,
+                          pixels.imageFile == "\(layer.id.uuidString).frame-\(pixels.index).png" else { throw ProjectError.invalid }
+                }
+            }
+            // A line's dashes and caps arrived in version 15, and only lines have them.
+            if let shape = layer.shape, shape.lineStyle != nil || shape.lineCap != nil {
+                guard manifest.version >= 15, shape.kind == .line else { throw ProjectError.invalid }
+            }
             if let text = layer.text {
                 // Per-letter colors arrived in version 10, per-letter faces in version 11.
                 guard text.isValid,
@@ -234,6 +390,20 @@ actor ProjectStore {
                 guard manifest.version >= 7, layer.isGroup != true, layer.imageFile == nil, adjustment.isValid else { throw ProjectError.invalid }
                 if adjustment.kind == .gaussianBlur || adjustment.kind == .motionBlur || adjustment.kind == .addNoise {
                     guard manifest.version >= 9 else { throw ProjectError.invalid }
+                }
+                // Progressive Blur, Bloom / Glow and RGB Split layers arrived in version 16.
+                if [.progressiveBlur, .bloomGlow, .rgbSplit].contains(adjustment.kind) || adjustment.filterLayerSettings != nil {
+                    guard manifest.version >= 16 else { throw ProjectError.invalid }
+                }
+                // Vignette, Lens Effects and Tonal Contrast layers arrived in version 18.
+                let filterLayer = adjustment.filterLayerSettings
+                if [.vignette, .lensEffects, .tonalContrast].contains(adjustment.kind)
+                    || filterLayer?.vignette != nil || filterLayer?.tonal != nil || filterLayer?.lens != nil {
+                    guard manifest.version >= 18 else { throw ProjectError.invalid }
+                }
+                // Sharpen layers arrived in version 19.
+                if adjustment.kind == .sharpen || filterLayer?.sharpen != nil {
+                    guard manifest.version >= 19 else { throw ProjectError.invalid }
                 }
             }
             // Layer masks arrived in version 4, folder masks in version 6.
@@ -287,11 +457,96 @@ actor ProjectStore {
         used += width * height
     }
 
-    private func checkFile(_ file: URL, inside package: URL, maximumBytes: Int) throws {
+    private func validateAnimation(_ animation: GIFAnimation, record: ProjectGIFRecord, image: CGImage) throws {
+        let source = animation.source
+        guard animation.selectedFrameIndex == record.selectedFrameIndex, animation.geometry == record.geometry,
+              animation.deletedFrameIndices == Set(record.deletedFrameIndices),
+              animation.frameOrder == record.frameOrder, animation.hasValidFrameOrder,
+              animation.timing == (record.timing?.frameTiming ?? GIFFrameTiming()),
+              animation.timing.isValid(for: Set(animation.frameReferences.map(\.index))),
+              !source.frames.isEmpty, source.frames.count <= GIFTimelineLimits.maxFrames,
+              record.deletedFrameIndices.allSatisfy({ source.frames.indices.contains($0) }),
+              animation.containsFrame(record.selectedFrameIndex),
+              Set(animation.framePixels.keys) == Set(record.framePixels.map(\.index)),
+              animation.framePixels.allSatisfy({ index, asset in
+                  animation.containsFrame(index) && asset.deep == nil && asset.image.bitsPerComponent <= 8
+                      && asset.image.width == (record.geometry?.width ?? source.width)
+                      && asset.image.height == (record.geometry?.height ?? source.height)
+              }),
+              (1...DocumentLimits.maxSide).contains(source.width), (1...DocumentLimits.maxSide).contains(source.height),
+              image.width == (record.geometry?.width ?? source.width),
+              image.height == (record.geometry?.height ?? source.height) else { throw ProjectError.invalid }
+        guard source.data.count <= GIFSource.byteLimit else { throw ProjectError.tooLarge }
+        guard let encoded = CGImageSourceCreateWithData(source.data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetType(encoded) as String? == UTType.gif.identifier,
+              CGImageSourceGetCount(encoded) == source.frames.count else { throw ProjectError.missingImage }
+        for (index, frame) in source.frames.enumerated() {
+            guard frame.index == index, frame.duration.isFinite, frame.duration >= GIFTimelineLimits.minimumFrameDuration,
+                  let properties = CGImageSourceCopyPropertiesAtIndex(encoded, index, nil) as? [CFString: Any],
+                  let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight] as? Int,
+                  width == source.width, height == source.height else { throw ProjectError.invalid }
+            var pixels = 0
+            try checkSize(width: width, height: height, used: &pixels)
+            guard width * height <= DocumentLimits.maxSurfacePixels else { throw ProjectError.tooLarge }
+        }
+    }
+
+    private func checkGIFBudget(_ source: GIFSource, bytes: inout Int, thumbnails: inout Int) throws {
+        guard source.data.count <= GIFSource.totalByteLimit - bytes else { throw ProjectError.tooLarge }
+        bytes += source.data.count
+        for frame in source.frames {
+            let width = frame.thumbnail.width, height = frame.thumbnail.height
+            guard (1...GIFTimelineLimits.thumbnailSide).contains(width), (1...GIFTimelineLimits.thumbnailSide).contains(height),
+                  width * height <= GIFSource.totalThumbnailPixelBudget - thumbnails else { throw ProjectError.tooLarge }
+            thumbnails += width * height
+        }
+    }
+
+    private func pngData(_ image: CGImage) throws -> Data {
+        try autoreleasepool {
+            let data = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+                throw ProjectError.encode
+            }
+            CGImageDestinationAddImage(destination, image, nil)
+            guard CGImageDestinationFinalize(destination) else { throw ProjectError.encode }
+            guard data.length <= 512 * 1024 * 1024 else { throw ProjectError.tooLarge }
+            return data as Data
+        }
+    }
+
+    private func readPNG(_ file: URL, name: String, isMask: Bool, used: inout Int) throws -> ImportedImage {
+        try autoreleasepool {
+            // The bytes own the pixels independently of the file, which an atomic save may replace while undo keeps them.
+            let bytes = try Data(contentsOf: file)
+            guard let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  CGImageSourceGetType(source) as String? == UTType.png.identifier,
+                  CGImageSourceGetCount(source) == 1,
+                  let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                  let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight] as? Int,
+                  (properties[kCGImagePropertyDepth] as? Int ?? 8) <= 8 else { throw ProjectError.missingImage }
+            try checkSize(width: width, height: height, used: &used)
+            guard let image = CGImageSourceCreateImageAtIndex(source, 0,
+                [kCGImageSourceShouldCacheImmediately: true] as CFDictionary),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 96,
+                    kCGImageSourceShouldCacheImmediately: true
+                  ] as CFDictionary) else { throw ProjectError.missingImage }
+            if isMask, !LayerMask.isValid(image) { throw ProjectError.invalid }
+            return ImportedImage(image: image, thumbnail: thumbnail, name: name)
+        }
+    }
+
+    @discardableResult
+    private func checkFile(_ file: URL, inside package: URL, maximumBytes: Int) throws -> Int {
         let root = package.resolvingSymlinksInPath().standardizedFileURL.path + "/"
         guard file.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root) else { throw ProjectError.invalid }
         let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true,
               let size = values.fileSize, size <= maximumBytes else { throw ProjectError.tooLarge }
+        return size
     }
 }
