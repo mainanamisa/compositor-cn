@@ -45,7 +45,7 @@ struct PDFImportTests {
         let document = try #require(session.document)
         #expect(document.size == CGSize(width: 833, height: 417))
         #expect(document.resolution == 300)
-        #expect(document.layers.map(\.name) == ["Page 2", "Page 1"])
+        #expect(document.layers.map(\.name) == ["第 2 页", "第 1 页"])
         let first = try #require(document.layers.last?.asset?.image)
         let second = try #require(document.layers.first?.asset?.image)
         #expect(first.width == 833 && first.height == 417)
