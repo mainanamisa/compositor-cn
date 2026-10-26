@@ -43,7 +43,7 @@ struct ExportFormatsTests {
         var options = JPEGOptions()
         options.quality = 0.7
         options.red = 1; options.green = 0; options.blue = 1
-        for format in ExportFormat.available where format != .exr {
+        for format in ExportFormat.available where format != .exr && format != .channelPack {
             let (data, preview) = try await encode(raster, format: format, options: options)
             #expect(!data.isEmpty)
             #expect(preview.width > 0 && preview.height > 0)
@@ -59,13 +59,14 @@ struct ExportFormatsTests {
             case .bmp: #expect(Array(data.prefix(2)) == Array("BM".utf8))
             case .pdf: #expect(Array(data.prefix(4)) == Array("%PDF".utf8))
             case .exr: break // filtered above: EXR goes through the EXR writer, not CGImageDestination
+            case .channelPack: break // filtered above: Channel Pack packs layers, covered by ChannelPackTests
             }
         }
     }
 
     @Test func formatsWithoutAlphaFlattenOntoTheMatte() async throws {
         let raster = try raster()
-        for format in ExportFormat.available where !format.supportsAlpha {
+        for format in ExportFormat.available where !format.supportsAlpha && format != .channelPack {
             var options = JPEGOptions()
             options.red = 1; options.green = 0; options.blue = 1
             let (data, _) = try await encode(raster, format: format, options: options)
