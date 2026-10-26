@@ -47,7 +47,7 @@ struct NativeLayerList: NSViewRepresentable {
         static let effectType = NSPasteboard.PasteboardType("com.compositor.layer-effect")
         static let maskType = NSPasteboard.PasteboardType("com.compositor.layer-mask")
         let session: EditorSession
-        private var rows: [ImageLayer] = []
+        var rows: [ImageLayer] = []
         private var rowDetails: [UUID: LayerHierarchy.Entry] = [:]
         private var oldCollapsed: Set<UUID> = []
         private var editingEnabled = false
@@ -58,7 +58,8 @@ struct NativeLayerList: NSViewRepresentable {
         func update(_ table: NSTableView) {
             let selectionChanged = activeLayerID != session.activeLayerID
             activeLayerID = session.activeLayerID
-            let entries = session.layerRows
+            // The panel's search and type filter narrow what is listed; every row index below is one of these.
+            let entries = session.filteredLayerRows
             let byID = Dictionary(uniqueKeysWithValues: (session.document?.layers ?? []).map { ($0.id, $0) })
             let next = entries.compactMap { byID[$0.layer.id] }
             let previousDetails = rowDetails
@@ -137,7 +138,7 @@ struct NativeLayerList: NSViewRepresentable {
 
             // 3. Delete Layer / Delete Selected Layers
             let deleteTitle: String
-            if session.isMaskSelected && session.activeLayer?.mask != nil {
+            if session.isMaskSelected, let layer = session.activeLayer, session.selectedMask(for: layer) != nil {
                 deleteTitle = "删除蒙版"
             } else if session.selectedLayerIDs.count > 1 {
                 deleteTitle = "删除所选图层"
@@ -469,7 +470,8 @@ struct NativeLayerList: NSViewRepresentable {
         }
         private func place(_ ids: [UUID], at row: Int, intoFolder: Bool, copying: Bool) -> Bool {
             // Where the drop lands is worked out once: each layer placed shifts the rows beneath it.
-            let current = session.layerRows
+            // The filtered rows, so a drop's indexes mean the rows the panel is showing.
+            let current = session.filteredLayerRows
             let parent: UUID?, above: UUID?, atBottom: Bool
             if intoFolder {
                 parent = rows[row].id; above = nil; atBottom = false
@@ -506,13 +508,21 @@ struct NativeLayerList: NSViewRepresentable {
             }
             let dragged = Set(dropped)
             let carried = dragged.reduce(into: Set<UUID>()) { $0.formUnion(session.descendantIDs(of: $1)) }
-            return session.layerRows.map(\.layer.id).filter { dragged.contains($0) && !carried.contains($0) }
+            return session.filteredLayerRows.map(\.layer.id).filter { dragged.contains($0) && !carried.contains($0) }
         }
     }
 }
 
 final class LayerTableView: NSTableView {
     weak var session: EditorSession?
+    /// The layers the list is showing: the panel's filtered rows when a search or filter is on, so a row
+    /// index here means the same row it does in the coordinator.
+    var displayedRows: [ImageLayer] {
+        if let coordinator = delegate as? NativeLayerList.Coordinator { return coordinator.rows }
+        // Without the coordinator (never in the panel) there is no honest answer; an empty list only
+        // disables the row's cursor and clicks, where a wrong-order guess would act on the wrong layer.
+        return []
+    }
     private var clippingTracking: NSTrackingArea?
     private var clippingMonitor: Any?
     private var clippingCursorActive = false
@@ -681,8 +691,8 @@ final class LayerTableView: NSTableView {
     /// the duplicate cursor over the rest of it, and over a mask thumbnail the one for showing the mask alone.
     private func clippingCursor(at point: NSPoint) -> NSCursor? {
         let index = row(at: point)
-        guard let session, session.layerRows.indices.contains(index) else { return nil }
-        let layer = session.layerRows[index].layer
+        guard let session, displayedRows.indices.contains(index) else { return nil }
+        let layer = displayedRows[index]
         // Option-click on a mask shows it alone (Option-dragging it onto another layer still copies it).
         if let thumbnail = thumbnail(at: point), thumbnail.isMaskTarget, !thumbnail.isHidden {
             return Self.showMaskCursor
@@ -699,7 +709,7 @@ final class LayerTableView: NSTableView {
     private static let clippingStrip: CGFloat = 10
     private func isClippingZone(_ point: NSPoint, row: Int) -> Bool {
         guard row >= 0 else { return false }
-        if let entries = session?.layerRows, entries.indices.contains(row), entries[row].layer.isGroup == true { return false }
+        if displayedRows.indices.contains(row), displayedRows[row].isGroup == true { return false }
         let rect = rect(ofRow: row)
         return point.y >= rect.maxY - min(Self.clippingStrip, rect.height / 3)
     }
@@ -757,10 +767,9 @@ final class LayerTableView: NSTableView {
         let row = row(at: point)
         // Handle clipping before effect selection: effects occupy the lower portion of taller rows.
         if event.modifierFlags.contains(.option), !event.modifierFlags.contains(.command), isClippingZone(point, row: row),
-           thumbnail(at: point)?.isMaskTarget != true,
-           let entries = session?.layerRows, entries.indices.contains(row) {
+           thumbnail(at: point)?.isMaskTarget != true, displayedRows.indices.contains(row) {
             session?.effectSelection = nil
-            session?.toggleClippingMask(entries[row].layer.id)
+            session?.toggleClippingMask(displayedRows[row].id)
             refreshClippingCursor(event.modifierFlags)
             return
         }
@@ -829,8 +838,8 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
     private let thumbnail = LayerThumbnailButton()
     private let maskThumbnail = LayerThumbnailButton()
     private let disabledMaskMark = MaskDisabledMark(labelWithString: "╱")
-    /// "16-Bit" or "HDR" after the size of a layer keeping more than 8 bits a channel (`DeepLayer`); gone once it's
-    /// rasterized to 8.
+    /// "GIF" after the size of an animated layer, or "16-Bit" or "HDR" after that of a layer keeping more than 8 bits a
+    /// channel (`DeepLayer`), gone once it's rasterized to 8.
     private let depthTag = LayerTag()
     /// Holds the tag inside the row while it shows; hidden, it gives its room back to the size.
     private var depthTagFits: NSLayoutConstraint!
@@ -994,8 +1003,10 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         // A folder steps its contents in by the same distance a clipping mask does; the two add up.
         indentation.constant = CGFloat(min(depth, 8)) * 24 + (layer.maskSourceID == nil ? 0 : 24)
         disclosure.isHidden = !layer.isGroup
-        disclosure.isEnabled = enabled
-        disclosure.image = NSImage(systemSymbolName: session.collapsedGroupIDs.contains(layer.id) ? "chevron.right" : "chevron.down", accessibilityDescription: "展开或折叠组")
+        // While the panel filters, folders list themselves opened; the chevron says so, and collapsing
+        // waits until the filter is off (toggling now would change nothing the list shows).
+        disclosure.isEnabled = enabled && !session.isFilteringLayers
+        disclosure.image = NSImage(systemSymbolName: session.isFilteringLayers || !session.collapsedGroupIDs.contains(layer.id) ? "chevron.down" : "chevron.right", accessibilityDescription: "展开或折叠组")
         // Pixel layers and masks show the whole canvas with their pixels where they sit, as Photoshop does;
         // editable text, adjustments and folders keep a square icon. Pictures redraw only when what they show changes.
         let canvas = session.document?.size ?? CGSize(width: 1, height: 1)
@@ -1046,8 +1057,9 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         if !renaming { nameLabel.stringValue = (layer.maskSourceID == nil ? "" : "↳ ") + layer.name }
         dimensions.stringValue = layer.liveText != nil ? "文本 · 双击以编辑" : layer.adjustment != nil ? "调整 · 双击以编辑" : layer.isGroup ? "组" : layer.sizeLabel
         depthTag.text = layer.depthLabel ?? ""
-        depthTag.toolTip = layer.asset?.isHDR == true ? "HDR 图层：保留比白色更亮的高光，显示为白色"
-                                                      : "16 位图层：每通道保留 16 位精度"
+        depthTag.toolTip = layer.gifAnimation != nil ? "GIF 动画：选中后可在画布下方查看各帧"
+            : layer.asset?.isHDR == true ? "HDR 图层：保留比白色更亮的高光，显示为白色"
+            : "16 位图层：每通道保留 16 位精度"
         depthTag.isHidden = layer.depthLabel == nil || layer.maskSourceID != nil
         depthTagFits.isActive = !depthTag.isHidden
         if let source = layer.maskSourceID {
@@ -1428,13 +1440,14 @@ private final class EyeSwipeButton: NSButton {
         // open if it does.
         defer { session.endVisibilitySwipe() }
         var ancestor = superview
-        while ancestor != nil && !(ancestor is NSTableView) { ancestor = ancestor?.superview }
-        guard let table = ancestor as? NSTableView else { return }
+        while ancestor != nil && !(ancestor is LayerTableView) { ancestor = ancestor?.superview }
+        guard let table = ancestor as? LayerTableView else { return }
+        let rows = table.displayedRows
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { return }
             let row = table.row(at: table.convert(next.locationInWindow, from: nil))
-            guard session.layerRows.indices.contains(row) else { continue }
-            session.setVisibilityInSwipe(session.layerRows[row].layer.id, visible: visible)
+            guard rows.indices.contains(row) else { continue }
+            session.setVisibilityInSwipe(rows[row].id, visible: visible)
             table.autoscroll(with: next)
         }
     }
@@ -1480,9 +1493,10 @@ extension ImageLayer {
         return text + " · " + percent.formatted(.number.precision(.fractionLength(0...1))) + "%"
     }
 
-    /// The tag after the size of a layer keeping 16 bits a channel, or light brighter than white (`DeepLayer`); nil
-    /// once it's rasterized to 8.
+    /// The tag after the size of an animated GIF layer, or of a layer keeping 16 bits a channel or light brighter than
+    /// white (`DeepLayer`), which goes once it's rasterized to 8.
     var depthLabel: String? {
+        if gifAnimation != nil { return "GIF" }
         guard let asset, asset.deep != nil, liveText == nil, adjustment == nil, !isGroup else { return nil }
         return asset.isHDR ? "HDR" : "16-Bit"
     }

@@ -107,6 +107,30 @@ struct FilterSheet: View {
                     .help("线条终点及之外的模糊量")
                 Toggle("反转", isOn: flag(\.progressiveInverted))
                     .help("交换起点和终点：起点模糊、向终点逐渐清晰")
+            case .rgbSplit:
+                HStack(spacing: 10) {
+                    Text("形状")
+                    Picker("形状", selection: flag(\.rgbSplitRadial)) {
+                        Text("线性").tag(false)
+                        Text("径向").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("线性沿一个方向错位颜色；径向从中心向外错位，中心保持清晰")
+                }
+                if settings.rgbSplitRadial {
+                    Text("在画布上点按或拖动来移动中心")
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                control("距离", \.rgbSplitDistance, range: 0...200, unit: "px", decimals: 0, logarithmic: false)
+                    .help("颜色错开的距离：红色偏向一侧，蓝色偏向另一侧")
+                control("模糊", \.rgbSplitBlur, range: 0...400, unit: "px", decimals: 0, logarithmic: false)
+                    .help("沿错位方向把颜色拖成条纹")
+                if !settings.rgbSplitRadial {
+                    control("角度", \.rgbSplitAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+                        .help("颜色错开的方向")
+                }
+            case .lensEffects:
+                lensEffectsControls
             case .motionBlur:
                 control("角度", \.angle, range: -90...90, unit: "°", decimals: 0, logarithmic: false)
                 control("距离", \.distance, range: 1...2000, unit: "px", decimals: 0, logarithmic: true)
@@ -148,6 +172,11 @@ struct FilterSheet: View {
                 control("羽化", \.vignetteFeather, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                 control("高光", \.vignetteHighlights, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                     .help("保护边缘附近的亮部区域")
+            case .sharpen:
+                control("数量", \.sharpenAmount, range: 0...300, unit: "%", decimals: 0, logarithmic: false)
+                    .help("强化边缘和细节的程度")
+                control("半径", \.sharpenRadius, range: 0.1...20, unit: "px", decimals: 1, logarithmic: true)
+                    .help("锐化细节的精细程度：小值突出清晰纹理，大值效果更强烈")
             case .bloomGlow:
                 control("数量", \.bloomAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                 control("半径", \.bloomRadius, range: 1...150, unit: "px", decimals: 0, logarithmic: true)
@@ -173,6 +202,15 @@ struct FilterSheet: View {
             Divider()
             HStack {
                 Button("取消") { session.cancelFilter() }.configuredNativeShortcut(.escape)
+                // The utility beside the effect: the layer's own channels, unshifted, as layers for Export As › Channel Pack.
+                // Not on an RGB Split adjustment layer, which has no pixels of its own to split.
+                if edit?.kind == .rgbSplit, session.adjustmentOriginal == nil {
+                    Button("拆分为图层") {
+                        session.cancelFilter()
+                        session.splitChannels()
+                    }
+                    .help("将图层的原始通道拆分为红、绿、蓝和 Alpha 四个灰度图层，供「导出为 › Channel Pack」使用。完全透明像素下的颜色无法恢复")
+                }
                 Spacer()
                 // While the preview is being worked out (Remove Background's mask, Content-Aware Fill) OK waits, so
                 // the panel says what it is waiting for rather than showing a disabled button and nothing else.
@@ -323,6 +361,81 @@ struct FilterSheet: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+
+    /// Lens Effects: which effect, then its own settings.
+    @ViewBuilder private var lensEffectsControls: some View {
+        HStack(spacing: 10) {
+            Text("Effect")
+            Picker("Effect", selection: Binding(get: { settings.lens.effect }, set: { new in update { $0.lens.effect = new } })) {
+                ForEach(LensEffect.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .labelsHidden().fixedSize()
+        }
+        switch settings.lens.effect {
+        case .anamorphicFlare:
+            control("Amount", \.lens.flareAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("Length", \.lens.flareLength, range: 1...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("How far the streaks reach across the picture")
+            control("Threshold", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("How bright a light has to be to flare; near 100, only the biggest, brightest spots")
+            control("Blue", \.lens.flareBlue, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("How far the lens's coatings turn each streak blue along its length; none keeps the light's own color")
+        case .starburst:
+            control("Amount", \.lens.starAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("Length", \.lens.starLength, range: 2...40, unit: "%", decimals: 0, logarithmic: false)
+                .help("How far the spikes reach")
+            control("Threshold", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("How bright a light has to be to sparkle; near 100, only the biggest, brightest spots")
+            control("Angle", \.lens.starAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+            HStack(spacing: 10) {
+                Text("Points")
+                Picker("Points", selection: Binding(get: { settings.lens.starPoints }, set: { new in update { $0.lens.starPoints = new } })) {
+                    ForEach(LensEffectSettings.starPointChoices, id: \.self) { Text("\($0)").tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("How many spikes each light has, as the lens's aperture blades make them")
+            }
+        case .mist:
+            control("Strength", \.lens.mistStrength, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("How much light scatters: a soft halo around bright areas, and gently lifted shadows")
+            control("Size", \.lens.mistSize, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("How far the light spreads")
+        case .prism:
+            control("Amount", \.lens.prismAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("Copies", \.lens.prismCopies, range: 1...8, unit: "", decimals: 0, logarithmic: false)
+                .help("How many times the picture echoes, each fainter")
+            control("Offset", \.lens.prismOffset, range: 0...50, unit: "%", decimals: 0, logarithmic: false)
+                .help("How far apart the copies are")
+            control("Angle", \.lens.prismAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+                .help("Which way the copies step")
+            control("Blur", \.lens.prismBlur, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("Soften the copies, more the farther they're pushed")
+            HStack(spacing: 10) {
+                Text("Direction")
+                Picker("Direction", selection: Binding(get: { settings.lens.prismBothWays }, set: { new in update { $0.lens.prismBothWays = new } })) {
+                    Text("One Way").tag(false)
+                    Text("Both Ways").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .help("Copies to one side of the picture, or out to both")
+            }
+        case .bokeh:
+            control("Size", \.lens.bokehRadius, range: LensEffectSettings.bokehSizes, unit: "%", decimals: 1, logarithmic: false)
+                .help("How far out of focus: the size of each disc")
+            control("Brightness", \.lens.bokehBrightness, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("How brightly lights open into discs")
+            control("Ring", \.lens.bokehRing, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("Light gathered at each disc's rim, as some lenses draw it")
+            HStack(spacing: 10) {
+                Text("Shape")
+                Picker("Shape", selection: Binding(get: { settings.lens.bokehShape }, set: { new in update { $0.lens.bokehShape = new } })) {
+                    ForEach(BokehShape.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .labelsHidden().fixedSize()
+                .help("The aperture's shape: round wide open, a hexagon of blades, an anamorphic oval, or a cat's eye toward the edges")
+            }
+        }
     }
 
     private func flag(_ key: WritableKeyPath<FilterSettings, Bool>) -> Binding<Bool> {

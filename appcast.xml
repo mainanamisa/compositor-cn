@@ -3,20 +3,16 @@
   <channel>
     <title>Compositor</title>
     <item>
-      <title>Version 1.5.2</title>
-      <pubDate>Tue, 13 Oct 2026 21:00:59 +0000</pubDate>
-      <sparkle:version>48</sparkle:version>
-      <sparkle:shortVersionString>1.5.2</sparkle:shortVersionString>
+      <title>Version 1.5.9</title>
+      <pubDate>Sun, 25 Oct 2026 20:59:05 +0000</pubDate>
+      <sparkle:version>55</sparkle:version>
+      <sparkle:shortVersionString>1.5.9</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <link>https://github.com/robbietilton/Compositor/releases/tag/v1.5.2</link>
-      <changes><![CDATA[Camera Raw Shadows now matches Photoshop: dark areas lift the way they do there
-Open a RAW file straight into the Camera Raw Filter from the import dialog
-Reset any Camera Raw section from its header
-Clear any keyboard shortcut, or give one to CMYK Proof Colors and Gamut Warning
-Shortcuts on the Delete key can now be changed
-Custom keyboard shortcuts are kept when the app updates
-Update notices always show at full width]]></changes>
-      <enclosure url="https://github.com/robbietilton/Compositor/releases/download/v1.5.2/Compositor.dmg" sparkle:edSignature="9qU8ou0bNdyOFDBLRq4Pi0gTvxn45YhedlprVlswjDVVjQpxpzLNAVZRX2G9/Fu6qg8ykTrrk0QtuqqsAaDoDw==" length="8225504" type="application/octet-stream"/>
+      <link>https://github.com/robbietilton/Compositor/releases/tag/v1.5.9</link>
+      <changes><![CDATA[Vignette, Lens Effects and Tonal Contrast as adjustment layers, and the Filter menu now lists the filters that can be adjustment layers first.
+Adjustment layers are much faster: their results are kept while nothing under them changes, and RGB Split, Bokeh and Starburst are several times quicker.
+Lens Effects layers look exactly as the Filter menu and Copy Merged make them.]]></changes>
+      <enclosure url="https://github.com/robbietilton/Compositor/releases/download/v1.5.9/Compositor.dmg" sparkle:edSignature="B1MrXjoAvvkU4oZ1mwAGSydSDmfS7+jfRydI1VR5AZQfxwQy9drVKYbftpPq+naMPRlfwvLpA2e013mcOtYUBQ==" length="8574954" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
