@@ -17,8 +17,8 @@ nonisolated enum GIFExportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .tooLarge:
-            "Animation export supports up to \(GIFTimelineLimits.maxFrames.formatted()) frames, \(GIFExporter.pixelBudget / 1_000_000) megapixels across all exported frames, and 512 MiB of encoded data. Reduce the export size or frame count."
-        case .invalidTimeline: "The selected animation timeline is missing or invalid."
+            "动画导出最多支持 \(GIFTimelineLimits.maxFrames.formatted()) 帧、全部导出帧合计 \(GIFExporter.pixelBudget / 1_000_000) 百万像素和 512 MiB 编码数据。请减小导出尺寸或减少帧数"
+        case .invalidTimeline: "所选动画时间轴缺失或无效"
         }
     }
 }

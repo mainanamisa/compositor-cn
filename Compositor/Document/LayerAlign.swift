@@ -129,14 +129,14 @@ extension EditorSession {
         if let selection, !selection.isEmpty { target = selection.path.boundingBoxOfPath }
         else if items.count == 1 { target = CGRect(origin: .zero, size: document.size) }
         else { target = items.map(\.box).reduce(CGRect.null) { $0.union($1) } }
-        move(items, by: items.map { alignment.offset(of: $0.box, to: target) }, name: "Align " + alignment.rawValue)
+        move(items, by: items.map { alignment.offset(of: $0.box, to: target) }, name: "对齐" + alignment.displayName)
     }
 
     func distributeLayers(_ distribution: LayerDistribution) {
         commitTransform()
         let items = alignmentItems
         guard items.count > 2 else { return }
-        move(items, by: distribution.offsets(of: items.map(\.box)), name: "Distribute " + distribution.rawValue)
+        move(items, by: distribution.offsets(of: items.map(\.box)), name: "分布" + distribution.displayName)
     }
 
     /// Moves each item's layers by its offset, rounded to whole pixels so nothing lands between them and has to be

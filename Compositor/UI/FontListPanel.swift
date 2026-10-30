@@ -79,7 +79,7 @@ final class FontListPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
         search.drawsBackground = false
         search.focusRingType = .none
         search.font = .systemFont(ofSize: NSFont.systemFontSize)
-        search.placeholderString = "Search Fonts"
+        search.placeholderString = "搜索字体"
         search.cell?.usesSingleLineMode = true
         search.cell?.isScrollable = true
         search.delegate = self
@@ -87,7 +87,7 @@ final class FontListPanel: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
         search.frame = NSRect(x: 30, y: ((box.bounds.height - height) / 2).rounded(), width: box.bounds.width - 56, height: height)
         search.autoresizingMask = [.width, .minYMargin, .maxYMargin]
         box.addSubview(search)
-        clear.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear search")
+        clear.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "清除搜索")
         clear.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
         clear.contentTintColor = .secondaryLabelColor
         clear.isBordered = false

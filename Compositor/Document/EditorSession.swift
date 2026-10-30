@@ -1161,7 +1161,7 @@ final class EditorSession {
             refreshCanvasPreview?()
         } catch {
             guard gifFrameSelectionRequestID == requestID else { return }
-            importError = "Couldn’t read GIF frame \(index + 1): \(error.localizedDescription)"
+            importError = "无法读取 GIF 第 \(index + 1) 帧：\(error.localizedDescription)"
         }
     }
 

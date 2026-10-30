@@ -369,7 +369,7 @@ struct FilterSheet: View {
         HStack(spacing: 10) {
             Text("效果")
             Picker("效果", selection: Binding(get: { settings.lens.effect }, set: { new in update { $0.lens.effect = new } })) {
-                ForEach(LensEffect.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                ForEach(LensEffect.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
             .labelsHidden().fixedSize()
         }
@@ -431,7 +431,7 @@ struct FilterSheet: View {
             HStack(spacing: 10) {
                 Text("形状")
                 Picker("形状", selection: Binding(get: { settings.lens.bokehShape }, set: { new in update { $0.lens.bokehShape = new } })) {
-                    ForEach(BokehShape.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(BokehShape.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
                 .labelsHidden().fixedSize()
                 .help("光圈的形状：全开时为圆形，光圈叶片形成六边形，变形宽银幕镜头为椭圆，或边缘处呈猫眼形")
@@ -537,4 +537,29 @@ struct GradientMapControls: View {
 private struct LabelWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+// Chinese display names for the pickers; the raw values stay English because both enums are Codable
+// and stored in project files.
+private extension LensEffect {
+    var displayName: String {
+        switch self {
+        case .anamorphicFlare: return "变形光斑"
+        case .starburst: return "星芒"
+        case .mist: return "薄雾"
+        case .prism: return "棱镜"
+        case .bokeh: return "焦外光斑"
+        }
+    }
+}
+
+private extension BokehShape {
+    var displayName: String {
+        switch self {
+        case .round: return "圆形"
+        case .hexagon: return "六边形"
+        case .oval: return "椭圆形"
+        case .catsEye: return "猫眼形"
+        }
+    }
 }

@@ -60,7 +60,7 @@ extension EditorSession {
             }
             layers.insert(contentsOf: children, at: index + 1)
             guard (try? LayerHierarchy.validate(layers.map(\.hierarchyRecord))) != nil else { return }
-            beginEdit("Split Channels")
+            beginEdit("拆分通道")
             self.document?.layers = layers
             activeLayerID = children.last?.id
             collapsedGroupIDs.remove(group.id)

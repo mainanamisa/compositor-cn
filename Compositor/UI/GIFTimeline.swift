@@ -34,7 +34,7 @@ struct GIFTimeline: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canPlay)
-                .help(isPlaying ? "Pause" : "Play")
+                .help(isPlaying ? "暂停" : "播放")
                 // The delay as a menu of common ones, as the Layers panel's adjustment button offers its kinds.
                 Menu { delayMenu } label: {
                     Text(timing.mode == .uniform ? "\(Int(delay.rounded()))ms" : originalDelays(spaced: false))
@@ -42,7 +42,7 @@ struct GIFTimeline: View {
                 }
                 .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
                 .disabled(!canEditTiming)
-                .help("How long each frame shows")
+                .help("每帧显示的时长")
             }
             // The same room either side of the button.
             .padding(.horizontal, 18)
@@ -102,16 +102,16 @@ struct GIFTimeline: View {
             Task { await onSelectFrame(frame.index) }
         }
         .contextMenu {
-            Button("Duplicate Frame") { Task { await onDuplicateFrame(frame.index) } }.disabled(!canEditFrames)
-            Button("Delete Frame") { Task { await onDeleteFrame(frame.index) } }.disabled(!canEditFrames || frames.count < 2)
+            Button("复制帧") { Task { await onDuplicateFrame(frame.index) } }.disabled(!canEditFrames)
+            Button("删除帧") { Task { await onDeleteFrame(frame.index) } }.disabled(!canEditFrames || frames.count < 2)
         }
         .id(frame.index)
-        .accessibilityLabel("Frame \(number)")
+        .accessibilityLabel("第 \(number) 帧")
     }
 
     /// Every frame for the same time, from a fast 20 ms up to a second, or each for the GIF's own.
     @ViewBuilder private var delayMenu: some View {
-        Toggle("\(originalDelays()) · Original", isOn: Binding(get: { timing.mode != .uniform }, set: { on in
+        Toggle("\(originalDelays()) · 原始", isOn: Binding(get: { timing.mode != .uniform }, set: { on in
             guard on else { return }
             var original = timing
             original.mode = .perFrame
