@@ -1,8 +1,8 @@
-# Compositor project format, versions 1–19
+# Compositor project format, versions 1–20
 
 A `.comp` file is a macOS document package containing `manifest.json` and an `images/` directory of `<layer UUID>.png` assets.
 
-The manifest identifies `com.compositor.project`, version `19` for new saves (versions `1`–`18` remain readable), and the sRGB working space. It stores document UUID, pixel dimensions, active layer UUID, and layers in bottom-to-top order. Each layer stores its UUID, name, visibility, transform (origin, size, clockwise rotation, flips, sampling), and optional image filename. Blank layers have no image asset.
+The manifest identifies `com.compositor.project`, version `20` for new saves (versions `1`–`19` remain readable), and the sRGB working space. It stores document UUID, pixel dimensions, active layer UUID, and layers in bottom-to-top order. Each layer stores its UUID, name, visibility, transform (origin, size, clockwise rotation, flips, sampling), and optional image filename. Blank layers have no image asset.
 
 Embedded PNGs preserve source pixels and transparency; transforms remain separate. Projects survive moving or deleting imported source photos. Saving uses a coordinated atomic package replacement. Unsupported versions, invalid metadata, missing assets, unsafe paths, and oversized data are rejected before replacing the live document.
 
@@ -66,3 +66,5 @@ Version 17 lets an image layer be an animated GIF, through an optional `gif` obj
 Version 18 adds three adjustment kinds from the Filter menu: `Vignette`, `Lens Effects` and `Tonal Contrast`. Each keeps its settings in an object of its own inside the adjustment's `filterLayerSettings`: `vignette` (`amount` 0–100, `color` with `red`, `green`, `blue` 0–1, `midpoint` 0–100, `roundness` −100–100, `feather` 0–100, `highlights` 0–100; it frames the whole canvas and recolors only pixels that are there), `tonal` (`amount` 0–100, `radius` 1–100 document pixels, `shadows`, `midtones`, `highlights` −100–100) and `lens` (`effect`: `Anamorphic Flare`, `Starburst`, `Mist`, `Prism` or `Bokeh`, with that effect's settings: `threshold` 50–100; `flareAmount` 0–100, `flareLength` 1–100 and `flareBlue` 0–100; `starAmount` 0–100, `starLength` 2–40, `starPoints` 4, 6, 8, 12 or 14, `starAngle` −180–180; `mistStrength` and `mistSize` 0–100; `prismAmount` 0–100, `prismCopies` 1–8, `prismOffset` 0–50, `prismAngle` −180–180, `prismBothWays`, `prismBlur` 0–100; `bokehRadius` 0.5–6, `bokehBrightness` and `bokehRing` 0–100, `bokehShape` `Round`, `Hexagon`, `Oval` or `Cat's Eye`). Lengths given as percentages are of the document's longer side. Any `lens` setting may be left out and takes its default. Files declaring 1–17 cannot contain these kinds or objects, and older app builds reject v18.
 
 Version 19 adds the `Sharpen` adjustment kind: an unsharp mask, its settings in a `sharpen` object inside `filterLayerSettings`, with `amount` 0–300 (percent of the detail added back) and `radius` 0.1–20 document pixels. Files declaring 1–18 cannot contain it, and older app builds reject v19.
+
+Version 20 adds `prismFringe` 0–100 to the `lens` settings: how far Prism splits each copy's red and blue apart, in hundredths of a percent of the document's longer side (0 keeps the copies crisp). Left out, it takes 30, the split earlier versions always drew. Older app builds reject v20.

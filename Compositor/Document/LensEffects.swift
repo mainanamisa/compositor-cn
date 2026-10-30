@@ -48,7 +48,8 @@ nonisolated struct LensEffectSettings: Codable, Equatable, Sendable {
     var mistStrength: Double = 50
     var mistSize: Double = 30
     /// Prism: how strong the ghosted copies are, how many, how far apart (percent of the longer side), which way in
-    /// degrees (counterclockwise from right), and how much they're softened, 0–100.
+    /// degrees (counterclockwise from right), how much they're softened, 0–100, and how far the glass splits each copy's
+    /// red and blue apart, 0–100 (0 keeps them crisp; 30, the default, splits them 0.3% of the longer side).
     var prismAmount: Double = 80
     var prismCopies: Double = 5
     var prismOffset: Double = 6
@@ -56,6 +57,7 @@ nonisolated struct LensEffectSettings: Codable, Equatable, Sendable {
     /// Copies on both sides of the picture rather than one, Copies of them each side.
     var prismBothWays = false
     var prismBlur: Double = 0
+    var prismFringe: Double = 30
     /// Bokeh, always a full lens blur: the discs' size (percent of the longer side), how brightly lights open into
     /// them, how much of a disc's light gathers at its rim, as many lenses draw it, and the aperture's shape.
     var bokehRadius: Double = 2
@@ -79,6 +81,7 @@ nonisolated struct LensEffectSettings: Codable, Equatable, Sendable {
         prismAmount = try read(.prismAmount, base.prismAmount); prismCopies = try read(.prismCopies, base.prismCopies)
         prismOffset = try read(.prismOffset, base.prismOffset); prismAngle = try read(.prismAngle, base.prismAngle)
         prismBothWays = try read(.prismBothWays, base.prismBothWays); prismBlur = try read(.prismBlur, base.prismBlur)
+        prismFringe = try read(.prismFringe, base.prismFringe)
         bokehRadius = try read(.bokehRadius, base.bokehRadius); bokehBrightness = try read(.bokehBrightness, base.bokehBrightness)
         bokehRing = try read(.bokehRing, base.bokehRing); bokehShape = try read(.bokehShape, base.bokehShape)
     }
@@ -111,6 +114,7 @@ nonisolated struct LensEffectSettings: Codable, Equatable, Sendable {
         result.prismOffset = ImageAdjustmentPixels.clamp(prismOffset, 0...50, 6)
         result.prismAngle = ImageAdjustmentPixels.clamp(prismAngle, -180...180, 180)
         result.prismBlur = ImageAdjustmentPixels.clamp(prismBlur, 0...100, 0)
+        result.prismFringe = ImageAdjustmentPixels.clamp(prismFringe, 0...100, 30)
         result.bokehRadius = ImageAdjustmentPixels.clamp(bokehRadius, Self.bokehSizes.lowerBound...Self.bokehSizes.upperBound, 2)
         result.bokehBrightness = ImageAdjustmentPixels.clamp(bokehBrightness, 0...100, 50)
         result.bokehRing = ImageAdjustmentPixels.clamp(bokehRing, 0...100, 100)
@@ -354,7 +358,7 @@ private nonisolated enum LensOptics {
     }
 
     /// A prism held before the lens: copies of the picture stepped along a line, one way or both, each fainter than the
-    /// last, with a thin color fringe from the glass. A copy shows where it's brighter than what's behind it, so lit
+    /// last, with a color fringe from the glass as wide as Fringe asks. A copy shows where it's brighter than what's behind it, so lit
     /// shapes echo into the shadows and nothing darkens. Blur softens the copies, more the farther they're pushed.
     static func prism(_ image: CIImage, _ settings: LensEffectSettings, side: CGFloat) -> CIImage {
         let extent = image.extent
@@ -367,11 +371,20 @@ private nonisolated enum LensOptics {
         let sides: [CGFloat] = settings.prismBothWays ? [1, -1] : [1]
         for copy in stride(from: Int(settings.prismCopies), through: 1, by: -1) {
             var ghost = CIImage.empty()
-            for way in sides { for (channel, fringe) in [(0, 0.003), (1, 0.0), (2, -0.003)] {
-                let along = way * (shift * CGFloat(copy) + side * fringe)
-                let moved = light.transformed(by: CGAffineTransform(translationX: direction.dx * along, y: direction.dy * along))
-                ghost = lighten(scaled(moved, channel == 0 ? 1 : 0, channel == 1 ? 1 : 0, channel == 2 ? 1 : 0), ghost)
-            } }
+            for way in sides {
+                func moved(_ along: CGFloat) -> CIImage {
+                    light.transformed(by: CGAffineTransform(translationX: direction.dx * along * way, y: direction.dy * along * way))
+                }
+                let step = shift * CGFloat(copy)
+                guard settings.prismFringe > 0 else {
+                    ghost = lighten(moved(step), ghost)
+                    continue
+                }
+                let fringe = side * settings.prismFringe / 10_000
+                for (channel, along) in [(0, step + fringe), (1, step), (2, step - fringe)] {
+                    ghost = lighten(scaled(moved(along), channel == 0 ? 1 : 0, channel == 1 ? 1 : 0, channel == 2 ? 1 : 0), ghost)
+                }
+            }
             if settings.prismBlur > 0 {
                 ghost = ghost.clampedToExtent().applyingGaussianBlur(sigma: side * settings.prismBlur / 10_000 * Double(copy))
             }

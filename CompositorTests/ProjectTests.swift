@@ -18,6 +18,23 @@ struct ProjectTests {
         #expect(ProjectManifest.supported.contains(ProjectManifest.current))
     }
 
+    /// Every format version a release has written still opens: a plain project, its manifest declaring each in turn.
+    @Test func everyReleasedFormatVersionStillOpens() async throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = EditorSession()
+        await session.importImages([try ImageImportTests().fixture(.png)])
+        let url = root.appendingPathComponent("Plain.comp")
+        try await ProjectStore.shared.save(try #require(session.projectSnapshot()), to: url)
+        let manifest = url.appendingPathComponent("manifest.json")
+        var json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any])
+        for version in 1...ProjectManifest.current {
+            json["version"] = version
+            try JSONSerialization.data(withJSONObject: json).write(to: manifest)
+            do { _ = try await ProjectStore.shared.load(from: url) } catch { Issue.record("version \(version): \(error)") }
+        }
+    }
+
     @Test func projectRoundTripSurvivesSourceRemovalAndPackageMove() async throws {
         let root = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: root) }

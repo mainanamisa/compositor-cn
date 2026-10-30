@@ -110,6 +110,22 @@ struct LensEffectsTests {
         #expect(both.left > 20 && both.right > 20)
     }
 
+    @Test func prismFringeSplitsTheCopysColorsOrKeepsThemCrisp() throws {
+        let original = try night()
+        // The copy lands 100 pixels left, at 90–110: how many pixels across its red and its blue land apart.
+        func split(_ fringe: Double) throws -> Int {
+            let image = try run { $0.effect = .prism; $0.prismAngle = 180; $0.prismOffset = 25; $0.prismCopies = 1; $0.prismAmount = 100; $0.prismFringe = fringe }
+            var apart = 0
+            for x in 80...120 {
+                let now = try color(image, x, 120)
+                if (now[0] > 128) != (now[2] > 128) { apart += 1 }
+            }
+            return apart
+        }
+        #expect(try split(0) == 0, "crisp")
+        #expect(try split(100) >= 4, "fringed")
+    }
+
     @Test func prismCopiesEchoFartherOut() throws {
         let original = try night()
         // Copies 40 pixels apart, leftwards from the light at 190–210: the third lands around 80–90.

@@ -227,7 +227,7 @@ struct FilterLayerTests {
         session.adjustmentEditingID = nil
         session.updateAdjustment(try #require(session.activeLayerID), value: adjustment)
         let snapshot = try #require(session.projectSnapshot())
-        #expect(snapshot.manifest.version == 19)
+        #expect(snapshot.manifest.version == 20)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Sharpen-\(UUID()).comp")
         defer { try? FileManager.default.removeItem(at: url) }
         try await ProjectStore.shared.save(snapshot, to: url)

@@ -318,6 +318,66 @@ import Testing
         #expect(worst <= 1, "zoom \(zoom): within \(worst) levels")
     }
 
+    /// Painting a Lens Effects layer's own mask changes only where the effect shows: the effect itself stays as it was.
+    @Test func paintingALensLayersMaskKeepsItsEffect() throws {
+        guard let renderer = GPUCanvasRenderer.shared else { return }
+        let session = EditorSession()
+        session.createDocument(width: 600, height: 400)
+        let context = try BrushRaster.context(width: 600, height: 400, mask: false)
+        context.setFillColor(CGColor(srgbRed: 0.3, green: 0.32, blue: 0.36, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 600, height: 400))
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        for point in [CGPoint(x: 150, y: 120), CGPoint(x: 420, y: 260), CGPoint(x: 300, y: 330)] {
+            context.fillEllipse(in: CGRect(x: point.x, y: point.y, width: 6, height: 6))
+        }
+        let image = try #require(context.makeImage())
+        session.insert(ImportedImage(image: image, thumbnail: image, name: "Picture"))
+        session.addAdjustment(.lensEffects)
+        session.adjustmentEditingID = nil
+        let lensID = try #require(session.activeLayerID)
+        var adjustment = LayerAdjustment(kind: .lensEffects)
+        adjustment.filterLayer.lens = LensEffectSettings()
+        adjustment.filterLayer.lens?.effect = .starburst
+        session.updateAdjustment(lensID, value: adjustment)
+        session.addLayerMask()
+        let canvas = CanvasView(session: session)
+        canvas.frame = CGRect(x: 0, y: 0, width: 700, height: 500)
+        let window = NSWindow(contentRect: canvas.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = canvas
+        defer { _ = window }
+        session.viewport.resize(to: canvas.bounds.size, backingScale: 2, documentSize: session.document?.size)
+        session.zoom(to: 1)
+        canvas.synchronizeDisplay()
+        func frame() throws -> [UInt8] {
+            let shot = try #require(canvas.gpuFrame(size: CGSize(width: 1400, height: 1000)))
+            let made = try #require(renderer.context.createCGImage(shot, from: CGRect(x: 0, y: 0, width: 1400, height: 1000),
+                                                                    format: .RGBA8, colorSpace: renderer.space))
+            let read = try BrushRaster.context(width: 1400, height: 1000, mask: false)
+            BrushRaster.draw(made, in: CGRect(x: 0, y: 0, width: 1400, height: 1000), mask: false, context: read)
+            return Array(UnsafeBufferPointer(start: try #require(read.data).assumingMemoryBound(to: UInt8.self), count: 1400 * 1000 * 4))
+        }
+        _ = try frame()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        let settled = try frame()
+        // A stroke along the bottom left corner, still being painted.
+        session.selectTool(.brush)
+        session.brushSettings.diameter = 30
+        session.beginBrush(at: CGPoint(x: 40, y: 360))
+        session.continueBrush(at: CGPoint(x: 90, y: 360))
+        let painting = try frame()
+        let size = try #require(session.document?.size)
+        let corner = session.viewport.viewPoint(from: CGPoint(x: 140, y: 300), documentSize: size)
+        var worst = 0
+        for y in 0..<1000 {
+            for x in 0..<1400 where !(CGFloat(x) < corner.x * 2 && CGFloat(y) > corner.y * 2) {
+                let i = (y * 1400 + x) * 4
+                for c in 0..<3 { worst = max(worst, abs(Int(settled[i + c]) - Int(painting[i + c]))) }
+            }
+        }
+        #expect(worst <= 1, "away from the stroke: within \(worst) levels")
+        _ = session.finishBrushImmediately()
+    }
+
     /// The canvas places a layer pixel for pixel with nearest sampling; Lens Effects must work on it as the export does,
     /// smoothly, or its rotated spikes keep hard bright pixels and sparkle more.
     @Test func lensEffectsIgnoreTheCanvasNearestSampling() throws {
