@@ -98,7 +98,9 @@ jobs:
   # a screen that couldn't be reached doesn't fail the run.
   screenshots:
     name: screenshots
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    # Disabled in this fork: the job drives the app by its English labels, which the Chinese UI doesn't have,
+    # and its red cross on every commit confuses people. continue-on-error kept the run green, this keeps it clean.
+    if: false
     runs-on: macos-26
     timeout-minutes: 30
     continue-on-error: true
