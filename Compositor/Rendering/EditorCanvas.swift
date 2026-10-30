@@ -476,7 +476,7 @@ final class CanvasView: NSView {
     /// once that's done.
     private func keepColorRangeCursor(after delay: TimeInterval = 0) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.session.colorRange != nil, self.pointerOverCanvas else { return }
+            guard let self, self.session.colorRange != nil, !self.spaceHeld, self.pointerOverCanvas else { return }
             self.pickCursor.set()
         }
     }
@@ -629,7 +629,7 @@ final class CanvasView: NSView {
             // cursor here when picking starts or ends. An empty canvas leaves the form's cursor alone.
             if session.document != nil, let window,
                bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
-                if picking { pickCursor.set() } else { restoreToolCursor() }
+                if spaceHeld { NSCursor.openHand.set() } else if picking { pickCursor.set() } else { restoreToolCursor() }
             }
             // Color Range's panel appears, and takes the focus, a moment after it opens.
             if session.colorRange != nil { keepColorRangeCursor(); keepColorRangeCursor(after: 0.15) }
@@ -1460,6 +1460,16 @@ final class CanvasView: NSView {
         context.restoreGState()
     }
 
+    /// The cursor for where the pointer is now, set straight away rather than when it next moves: the hand while Space
+    /// is held, otherwise the tool's own (or the eyedropper's, picking).
+    private func refreshPointerCursor() {
+        guard session.document != nil, dragCursor == nil, let window,
+              bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) else { return }
+        if spaceHeld { NSCursor.openHand.set() }
+        else if picking { pickCursor.set() }
+        else { restoreToolCursor() }
+    }
+
     /// Puts the current tool's cursor back after picking, the way the cursor rects would on entering the canvas.
     private func restoreToolCursor() {
         if session.hueTargeting { NSCursor.resizeLeftRight.set() }
@@ -1485,7 +1495,8 @@ final class CanvasView: NSView {
     override func resetCursorRects() {
         guard session.document != nil else { return }
         if let dragCursor { addCursorRect(bounds, cursor: dragCursor); return }
-        if picking {
+        // Space held pans, whatever the tool: the hand, not the eyedropper or a selection tool's cursor.
+        if picking, !spaceHeld {
             addCursorRect(bounds, cursor: pickCursor)
             keepColorRangeCursor()
             return
@@ -1626,6 +1637,13 @@ final class CanvasView: NSView {
             session.updateCameraRawReadout(at: session.viewport.documentPoint(from: point, documentSize: document.size))
         }
         optionHeld = event.modifierFlags.contains(.option)
+        // Space held: the hand stays put as the pointer moves, rather than the tool putting its own cursor back.
+        if spaceHeld {
+            NSCursor.openHand.set()
+            brushPointer = convert(event.locationInWindow, from: nil)
+            updateBrushCursor()
+            return
+        }
         if picking { pickCursor.set(); return }
         if session.tool.isSelectionTool {
             // Keys may have changed while the app was in the background.
@@ -1646,7 +1664,8 @@ final class CanvasView: NSView {
     }
     override func cursorUpdate(with event: NSEvent) {
         guard session.document != nil else { return }
-        if picking { pickCursor.set() }
+        if spaceHeld, dragCursor == nil { NSCursor.openHand.set() }
+        else if picking { pickCursor.set() }
         else if session.tool.isSelectionTool, !spaceHeld { lassoCursor.set() }
         // Cursor-update events carry no modifier flags (AppKit sends one after every key change), so read
         // the keys as they are now; the event's flags would undo Option's duplicate cursor straight away.
@@ -2324,6 +2343,7 @@ final class CanvasView: NSView {
             spaceHeld = true
             updateBrushCursor()
             window?.invalidateCursorRects(for: self)
+            refreshPointerCursor()
         } else if event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "x": session.swapPaletteColors()
@@ -2367,6 +2387,7 @@ final class CanvasView: NSView {
             spaceHeld = false
             updateBrushCursor()
             window?.invalidateCursorRects(for: self)
+            refreshPointerCursor()
         } else { super.keyUp(with: event) }
     }
     override func resignFirstResponder() -> Bool {
@@ -2761,6 +2782,11 @@ extension CanvasView {
             let underneath = Set(document.renderLayers.map(\.id).prefix { $0 != id }).union([id])
             for index in document.layers.indices where document.layers[index].isGroup != true && !underneath.contains(document.layers[index].id) {
                 document.layers[index].isVisible = false
+            }
+            // Its own mask and opacity go on over it on the canvas.
+            if let index = document.layers.firstIndex(where: { $0.id == id }) {
+                document.layers[index].mask?.isEnabled = false
+                document.layers[index].opacity = 1
             }
             let width = Int(document.size.width.rounded()), height = Int(document.size.height.rounded())
             guard let context = try? BrushRaster.context(width: width, height: height, mask: false) else { return }
@@ -3219,6 +3245,11 @@ extension CanvasView {
         }
         // An adjustment re-colors what's under it, through its own mask and its folders' masks, at its opacity.
         func adjusted(_ below: CIImage, by layer: ImageLayer, adjustment: LayerAdjustment, folders: Bool) -> CIImage? {
+            if folders, adjustment.kind == .lensEffects, let exact = lensExact[layer.id], exact.key == lensLatest[layer.id],
+               let placed = placement.place(exact.image, transform: LayerTransform(origin: .zero, size: document.size)) {
+                // Worked out with its folders, blend mode and the layers under it, without its own mask and opacity.
+                return covered(placed, over: below, by: layer, folders: false, opacity: layer.opacity)
+            }
             // Lens Effects works on what's below as pixels, as the export does: the canvas places layers with nearest sampling,
             // which its spikes' rotations would carry through, keeping hard bright pixels the export smooths.
             var source = below
@@ -3241,6 +3272,10 @@ extension CanvasView {
                     .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputBackgroundImageKey: CIImage.empty(),
                                                                          kCIInputMaskImageKey: below])
             }
+            return covered(changed, over: below, by: layer, folders: folders, opacity: layer.effectiveOpacity(in: byID))
+        }
+        // `changed` shown over `below` through the layer's mask (as it's being painted, too), its folders' and `opacity`.
+        func covered(_ changed: CIImage, over below: CIImage, by layer: ImageLayer, folders: Bool, opacity: Double) -> CIImage {
             var coverage: CIImage?
             func multiply(_ mask: CIImage) {
                 coverage = coverage.map {
@@ -3261,7 +3296,6 @@ extension CanvasView {
                     depth += 1
                 }
             }
-            let opacity = layer.effectiveOpacity(in: byID)
             if opacity < 1 {
                 multiply(CIImage(color: CIColor(red: opacity, green: opacity, blue: opacity)))
             }
@@ -3319,17 +3353,17 @@ extension CanvasView {
                 // Its folders' masks are part of what it's drawn through.
                 var folder = layer.parentID, depth = 0
                 while let current = folder, depth < 64 { _ = folderMask(current); folder = byID[current]?.parentID; depth += 1 }
-                prints.append(adjustmentPrint(layer, adjustment))
-                let steady = !prints.contains { $0.hasPrefix("transient") }
                 if adjustment.kind == .lensEffects {
-                    lensLatest[id] = prints
-                    if steady, let exact = lensExact[id], exact.key == prints,
-                       let placed = placement.place(exact.image, transform: LayerTransform(origin: .zero, size: document.size)) {
-                        result = placed
-                        continue
-                    }
-                    if steady { makeLensExact(id, key: prints) }
+                    // The exact effect doesn't hang on the layer's own mask or opacity, which go on over it as they're
+                    // painted and dragged, so neither leaves the exact one.
+                    let key = prints + ["lens \(id) \(adjustment) \(layer.transform) \(layer.effectiveOpacity(in: byID) / max(layer.opacity, 1e-6)) "
+                                        + "\(session.displayedBlendMode(for: layer))"]
+                    lensLatest[id] = key
+                    if !key.contains(where: { $0.hasPrefix("transient") }), lensExact[id]?.key != key { makeLensExact(id, key: key) }
                 }
+                prints.append(adjustmentPrint(layer, adjustment))
+                if adjustment.kind == .lensEffects { prints.append(lensExact[id]?.key == lensLatest[id] ? "exact" : "quick") }
+                let steady = !prints.contains { $0.hasPrefix("transient") }
                 if cachesAdjustments, steady, let entry = adjustmentCache[id], entry.key == prints {
                     result = entry.image
                     cached.insert(id)

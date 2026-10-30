@@ -131,6 +131,8 @@ struct FilterSheet: View {
                 }
             case .lensEffects:
                 lensEffectsControls
+            case .rimLight:
+                rimLightControls
             case .motionBlur:
                 control("角度", \.angle, range: -90...90, unit: "°", decimals: 0, logarithmic: false)
                 control("距离", \.distance, range: 1...2000, unit: "px", decimals: 0, logarithmic: true)
@@ -220,6 +222,10 @@ struct FilterSheet: View {
                     ProgressView().controlSize(.small)
                     Text(edit?.committing == true ? "正在应用…" : "正在处理…")
                         .font(.callout).foregroundStyle(.secondary)
+                } else if let edit, edit.kind == .rimLight, edit.preparing, !RimLighting.hasSubject(for: edit.hdrPreviewSource ?? edit.previewSource) {
+                    // Only the first preview, which finds the subject: relighting it afterwards is quick.
+                    ProgressView().controlSize(.small)
+                    Text("正在识别主体…").font(.callout).foregroundStyle(.secondary)
                 }
                 Button("确定") { Task { await session.commitFilter() } }
                     .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
@@ -237,6 +243,7 @@ struct FilterSheet: View {
         .onChange(of: session.colorPicker?.color) { _, _ in
             session.previewGradientMapColor()
             session.previewVignetteColor()
+            session.previewRimLightColor()
             session.previewDitherColor()
         }
     }
@@ -364,6 +371,54 @@ struct FilterSheet: View {
     }
 
     /// Lens Effects: which effect, then its own settings.
+    /// Rim Light: Glow, then each light's color, angle, strength, width and choke, with room for up to three.
+    @ViewBuilder private var rimLightControls: some View {
+        let rim = settings.rimLight
+        control("辉光", \.rimLight.glow, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("让光在主体周围的空气中晕染，使其融入背景")
+        ForEach(Array(rim.lights.enumerated()), id: \.element.id) { index, light in
+            Divider()
+            HStack(spacing: 8) {
+                Text("光源 \(index + 1)").font(.headline)
+                Spacer()
+                let color = light.color
+                Button { session.openRimLightColorPicker(index: index) } label: {
+                    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
+                        .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
+                        .overlay { shape.strokeBorder(.black, lineWidth: 1) }
+                        .frame(width: 24, height: 24)
+                        .contentShape(shape)
+                }
+                .buttonStyle(.plain)
+                .help("选择此光源的颜色")
+                if rim.lights.count > 1 {
+                    Button {
+                        // A color still being picked belongs to the lights as they were numbered.
+                        if case .rimLight = session.colorPicker?.target { session.closeColorPicker(commit: true) }
+                        update { $0.rimLight.lights.removeAll { $0.id == light.id } }
+                    } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(.borderless)
+                    .help("移除此光源")
+                }
+            }
+            control("角度", \.rimLight[light: light.id].angle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+                .help("光从主体背后的哪个方向来：0° 为右侧，90° 为正上方")
+            control("强度", \.rimLight[light: light.id].strength, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("宽度", \.rimLight[light: light.id].width, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光包裹主体边缘的程度")
+            control("收缩", \.rimLight[light: light.id].choke, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光在内侧的结束方式：低值从边缘柔和渐隐，高值保持明亮并利落截止")
+        }
+        if rim.lights.count < RimLightSettings.maximumLights {
+            Button("添加光源") {
+                if case .rimLight = session.colorPicker?.target { session.closeColorPicker(commit: true) }
+                update { $0.rimLight.lights.append($0.rimLight.nextLight) }
+            }
+            .help("再从另一侧给主体补光")
+        }
+    }
+
     @ViewBuilder private var lensEffectsControls: some View {
         HStack(spacing: 10) {
             Text("Effect")
@@ -402,23 +457,25 @@ struct FilterSheet: View {
             control("Size", \.lens.mistSize, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                 .help("How far the light spreads")
         case .prism:
-            control("Amount", \.lens.prismAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-            control("Copies", \.lens.prismCopies, range: 1...8, unit: "", decimals: 0, logarithmic: false)
-                .help("How many times the picture echoes, each fainter")
-            control("Offset", \.lens.prismOffset, range: 0...50, unit: "%", decimals: 0, logarithmic: false)
-                .help("How far apart the copies are")
-            control("Angle", \.lens.prismAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
-                .help("Which way the copies step")
-            control("Blur", \.lens.prismBlur, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("Soften the copies, more the farther they're pushed")
+            control("数量", \.lens.prismAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("重影数", \.lens.prismCopies, range: 1...8, unit: "", decimals: 0, logarithmic: false)
+                .help("画面重复的次数，每次更淡")
+            control("偏移", \.lens.prismOffset, range: 0...50, unit: "%", decimals: 0, logarithmic: false)
+                .help("各重影之间的距离")
+            control("角度", \.lens.prismAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+                .help("重影排列的方向")
+            control("模糊", \.lens.prismBlur, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("柔化重影，推得越远越模糊")
+            control("色散", \.lens.prismFringe, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("像玻璃棱镜一样分离每个重影的红蓝通道；设为 0 时重影清晰无色散")
             HStack(spacing: 10) {
-                Text("Direction")
-                Picker("Direction", selection: Binding(get: { settings.lens.prismBothWays }, set: { new in update { $0.lens.prismBothWays = new } })) {
-                    Text("One Way").tag(false)
-                    Text("Both Ways").tag(true)
+                Text("方向")
+                Picker("方向", selection: Binding(get: { settings.lens.prismBothWays }, set: { new in update { $0.lens.prismBothWays = new } })) {
+                    Text("单侧").tag(false)
+                    Text("双侧").tag(true)
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("Copies to one side of the picture, or out to both")
+                .help("重影只在画面一侧，或向两侧展开")
             }
         case .bokeh:
             control("Size", \.lens.bokehRadius, range: LensEffectSettings.bokehSizes, unit: "%", decimals: 1, logarithmic: false)

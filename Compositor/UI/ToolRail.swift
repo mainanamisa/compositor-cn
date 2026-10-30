@@ -68,7 +68,12 @@ struct ToolRailStack: View {
                 else if tool == .lasso, session.lassoKind == .polygonal { PolygonalLassoToolIcon().frame(width: 18, height: 18) }
                 else if tool == .wand, session.wandMode == .object { ObjectSelectionToolIcon().frame(width: 18, height: 18) }
                 // The Marquee's icon follows its shape: a dashed circle in Ellipse mode.
-                else { Image(systemName: tool == .marquee && session.marqueeKind == .ellipse ? "circle.dashed" : session.symbol(for: tool)).font(.system(size: 17)) }
+                else {
+                    Image(systemName: tool == .marquee && session.marqueeKind == .ellipse ? "circle.dashed" : session.symbol(for: tool))
+                        .font(.system(size: 17))
+                        // The hand turned so its thumb is on the left, as a left hand grabbing the canvas.
+                        .scaleEffect(x: tool == .hand ? -1 : 1, y: 1)
+                }
             }
             .frame(width: ToolRailLayout.buttonSize, height: ToolRailLayout.buttonSize)
             .background(session.tool == tool ? Color.white.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))

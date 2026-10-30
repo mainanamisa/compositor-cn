@@ -458,6 +458,7 @@ extension FilterKind {
         case .scanlines: return "扫描线"
         case .rgbSplit: return "RGB 分离"
         case .lensEffects: return "镜头效果"
+        case .rimLight: return "轮廓光"
         case .tonalContrast: return "色调对比度"
         case .lensCorrection: return "镜头校正"
         case .cameraRaw: return "Camera Raw 滤镜"

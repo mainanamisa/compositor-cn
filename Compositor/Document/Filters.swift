@@ -17,6 +17,7 @@ nonisolated enum FilterKind: String, CaseIterable, Sendable {
     case rgbSplit = "RGB Split"
     case lensEffects = "Lens Effects"
     case tonalContrast = "Tonal Contrast"
+    case rimLight = "Rim Light"
     case lensCorrection = "Lens Correction"
     case cameraRaw = "Camera Raw Filter"
     case removeBackground = "Remove Background"
@@ -34,7 +35,7 @@ nonisolated enum FilterKind: String, CaseIterable, Sendable {
     /// 16-bit pixels, rather than three times through `DeepLayer.run`.
     var runsAtSixteenBits: Bool {
         self == .gaussianBlur || self == .motionBlur || self == .progressiveBlur || self == .bloomGlow || self == .lensEffects
-            || self == .sharpen
+            || self == .sharpen || self == .rimLight
     }
     /// Filters whose output channels each depend on all three input channels (Camera Raw's color, and the ones that work
     /// from brightness), which a 16-bit layer runs the slower, channel-by-channel way (`DeepLayer.run`).
@@ -129,6 +130,7 @@ nonisolated struct FilterSettings: Equatable, Sendable {
     /// (lines bowing outward), negative straightens pincushion (lines bowing inward).
     var distortion: Double = 0
     var lens = LensEffectSettings()
+    var rimLight = RimLightSettings()
     var curves = CurvesSettings()
     var exposure = ExposureSettings()
     var gradientMap = GradientMapSettings()
@@ -186,6 +188,7 @@ nonisolated struct FilterSettings: Equatable, Sendable {
         result.dither = dither.normalized
         result.scanlines = scanlines.normalized
         result.lens = lens.normalized
+        result.rimLight = rimLight.normalized
         result.cameraRaw = cameraRaw.normalized
         return result
     }
@@ -359,6 +362,8 @@ nonisolated enum PixelFilter {
         case .lensEffects:
             let side = job.lensSide ?? CGFloat(max(job.image.width, job.image.height))
             image = try render(settings.lens.apply(to: CIImage(cgImage: job.image), side: side), job: job)
+        case .rimLight:
+            image = try render(RimLighting.apply(to: CIImage(cgImage: job.image), source: job.image, settings: settings.rimLight), job: job)
         case .motionBlur:
             // Core Image's y axis points up, so its counterclockwise angle matches Photoshop's.
             let streaked = extending(edges, past: job.canvasSides, of: extent).applyingFilter("CIMotionBlur", parameters: [
@@ -940,6 +945,7 @@ extension EditorSession {
         // A filter color still being picked goes with the panel.
         if case .gradientMap = colorPicker?.target { closeColorPicker(commit: false) }
         if case .vignette = colorPicker?.target { closeColorPicker(commit: false) }
+        if case .rimLight = colorPicker?.target { closeColorPicker(commit: false) }
         if case .dither = colorPicker?.target { closeColorPicker(commit: false) }
         if finishAdjustmentEditing(commit: false) { return }
         guard let edit = filterEdit, !edit.committing else { return }
@@ -954,6 +960,7 @@ extension EditorSession {
     func commitFilter() async {
         if case .gradientMap = colorPicker?.target { closeColorPicker(commit: true) }
         if case .vignette = colorPicker?.target { closeColorPicker(commit: true) }
+        if case .rimLight = colorPicker?.target { closeColorPicker(commit: true) }
         if case .dither = colorPicker?.target { closeColorPicker(commit: true) }
         if finishAdjustmentEditing(commit: true) { return }
         guard let edit = filterEdit, !edit.committing else { return }
@@ -972,6 +979,7 @@ extension EditorSession {
             || (edit.kind == .bloomGlow && edit.settings.bloomAmount == 0)
             || (edit.kind == .sharpen && edit.settings.sharpenAmount == 0)
             || (edit.kind == .lensEffects && edit.settings.lens.isIdentity)
+            || (edit.kind == .rimLight && edit.settings.rimLight.isIdentity)
             || (edit.kind == .tonalContrast && (edit.settings.tonalAmount == 0 ||
                 (edit.settings.tonalShadows == 0 && edit.settings.tonalMidtones == 0 && edit.settings.tonalHighlights == 0)))
             || (edit.kind == .exposure && edit.settings.exposure == ExposureSettings())
