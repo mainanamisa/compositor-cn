@@ -300,6 +300,9 @@ final class EditorSession {
     /// The Move tool's transform box and handles (⌘H). Hidden, a drag anywhere just moves the layer;
     /// a pending ⌘T transform still shows its box.
     var showsTransformControls = ToolDefaults.bool("transformControls", true) { didSet { ToolDefaults.set(showsTransformControls, "transformControls") } }
+    /// The selection whose outline ⌘H hid (outside the Move tool). It still limits painting and adjustments; any other
+    /// selection, or none, shows its outline again, so a new one is never invisible.
+    var hiddenSelectionEdges: DocumentSelection?
     /// The copies an Option-drag made, and what was selected before it, so Escape can take them away again.
     @ObservationIgnored var transformDuplicate: (copies: [UUID], source: Set<UUID>, primary: UUID?)?
     var brushSettings = BrushSettings() { didSet { refreshGradient() } }
@@ -410,8 +413,15 @@ final class EditorSession {
             ToolDefaults.set(gridAppearance.opacity, "gridOpacity")
         }
     }
-    /// User guides. Hidden extras do not snap.
-    var showsGuides = ToolDefaults.bool("guides", true) { didSet { ToolDefaults.set(showsGuides, "guides") } }
+    /// User guides, as View › Show › Guides (⌘;) and ⌘H leave them. Hidden guides do not snap. Turning them on, or making
+    /// a guide, also brings them back from ⌘H.
+    var showsGuides: Bool {
+        get { guidesOn && !extrasHideGuides }
+        set { guidesOn = newValue; extrasHideGuides = false }
+    }
+    private var guidesOn = ToolDefaults.bool("guides", true) { didSet { ToolDefaults.set(guidesOn, "guides") } }
+    /// ⌘H's hold on the guides, for the session only, so ⌘; keeps its own setting underneath.
+    var extrasHideGuides = false
     /// F: the canvas alone on black, filling the screen, with every panel and bar put away. F again brings them back.
     var canvasOnly = false
     /// Nothing in progress for Escape to cancel (a transform, crop, lasso, shape, gradient, stroke or text), so in
@@ -796,6 +806,7 @@ final class EditorSession {
     }
 
     func endEdit() {
+        if let before = history.endingEditBefore { keepLayerDepths(since: before) }
         history.end(document: document, selection: activeLayerID)
         gifTimelinesByLayerID = gifTimelinesByLayerID.filter { $0.value.source != nil }
     }
@@ -885,6 +896,26 @@ final class EditorSession {
         beginEdit(document?.layers[index].isVisible == true ? "隐藏图层" : "显示图层")
         defer { endEdit() }
         document?.layers[index].isVisible.toggle()
+    }
+
+    /// Hide Layer / Show Layer, from the menus: the selected layers all hidden, or with the active one hidden, all
+    /// shown, as one undo step.
+    func toggleSelectedLayersVisibility() {
+        guard canEditLayers, let active = activeLayer else { return }
+        let ids = selectedLayerIDs.union([active.id])
+        let visible = !active.isVisible
+        beginEdit(visibilityTitle)
+        defer { endEdit() }
+        guard let layers = document?.layers else { return }
+        document?.layers = layers.map { layer in
+            var layer = layer
+            if ids.contains(layer.id) { layer.isVisible = visible }
+            return layer
+        }
+    }
+    /// The menus' name for `toggleSelectedLayersVisibility`.
+    var visibilityTitle: String {
+        (activeLayer?.isVisible == false ? "显示" : "隐藏") + (selectedLayerIDs.count > 1 ? "多个图层" : "图层")
     }
 
     /// Photoshop's eye swipe: pressing an eye shows or hides that layer, and dragging over other eyes gives them the
@@ -1214,6 +1245,12 @@ final class EditorSession {
     /// Opens each artboard of a Photoshop file as a document of its own; set by the workspace, which makes the tabs.
     /// Without it (no workspace), a file with artboards imports as one canvas, as one without them does.
     @ObservationIgnored var opensArtboard: ((PSDDocument, String) async -> Void)?
+    /// The layer list's Export Layers as PNGs…; set by the project controller, which shows the panels.
+    @ObservationIgnored var exportsLayers: (() async -> Void)?
+    /// While Volumetric Light's depth model is downloading or loading, the first time it's used (`DepthModel`).
+    var preparingDepth = false
+    /// Set while Convert to 8-Bit ends its edit, so `keepLayerDepths` lets it make 16-bit layers 8-bit.
+    @ObservationIgnored var convertsToEightBit = false
 
     /// One Photoshop artboard's layers as this tab's document, after the conversion report when there's anything in it.
     func importArtboard(_ parsed: PSDDocument, named name: String) async {

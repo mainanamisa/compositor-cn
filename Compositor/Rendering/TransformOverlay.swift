@@ -102,7 +102,14 @@ final class TransformOverlay: NSView {
         return session.viewport.viewPoint(from: center, documentSize: document.size)
     }
 
-    /// A crosshair in a ring, where the split spreads out from.
+    /// Volumetric Light's light in view coordinates while its panel is open.
+    var volumetricLight: CGPoint? {
+        guard let edit = session.filterEdit, edit.kind == .volumetricLight,
+              let center = edit.settings.volumetric.center, let document = session.document else { return nil }
+        return session.viewport.viewPoint(from: center, documentSize: document.size)
+    }
+
+    /// A crosshair in a ring, where the split spreads out from, or where Volumetric Light's light is.
     private func drawRGBSplitCenter(_ center: CGPoint) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
@@ -212,7 +219,7 @@ final class TransformOverlay: NSView {
         drawLayoutGrid()
         drawGuides()
         if let line = progressiveLine { drawProgressiveLine(line) }
-        if let center = rgbSplitCenter { drawRGBSplitCenter(center) }
+        if let center = rgbSplitCenter ?? volumetricLight { drawRGBSplitCenter(center) }
         else if session.tool == .crop { drawCrop() }
         else if let line = gradientLine { drawGradientLine(line) }
         else { drawTransformHandles() }
@@ -320,7 +327,7 @@ final class TransformOverlay: NSView {
 
     /// Marching ants: a white line under an animated black dash.
     private func drawSelection() {
-        guard let selection = session.displayedSelection, !selection.isEmpty, var transform = documentToView,
+        guard session.showsSelectionEdges, let selection = session.displayedSelection, !selection.isEmpty, var transform = documentToView,
               let outline = antsOutline(for: selection.path),
               let path = outline.copy(using: &transform), let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()

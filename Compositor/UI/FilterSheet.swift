@@ -133,6 +133,8 @@ struct FilterSheet: View {
                 lensEffectsControls
             case .rimLight:
                 rimLightControls
+            case .volumetricLight:
+                volumetricLightControls
             case .motionBlur:
                 control("角度", \.angle, range: -90...90, unit: "°", decimals: 0, logarithmic: false)
                 control("距离", \.distance, range: 1...2000, unit: "px", decimals: 0, logarithmic: true)
@@ -222,19 +224,30 @@ struct FilterSheet: View {
                     ProgressView().controlSize(.small)
                     Text(edit?.committing == true ? "正在应用…" : "正在处理…")
                         .font(.callout).foregroundStyle(.secondary)
-                } else if let edit, edit.kind == .rimLight, edit.preparing, !RimLighting.hasSubject(for: edit.hdrPreviewSource ?? edit.previewSource) {
+                } else if edit?.kind == .volumetricLight, session.preparingDepth {
+                    // The first time only: the depth model is downloading (about 2.6 MB).
+                    ProgressView().controlSize(.small)
+                    Text("正在获取深度…").font(.callout).foregroundStyle(.secondary)
+                } else if let edit, edit.preparing, edit.kind == .rimLight && !RimLighting.hasSubject(for: edit.hdrPreviewSource ?? edit.previewSource)
+                            || edit.kind == .volumetricLight && !VolumetricLighting.hasLooked(for: edit.hdrPreviewSource ?? edit.previewSource) {
                     // Only the first preview, which finds the subject: relighting it afterwards is quick.
                     ProgressView().controlSize(.small)
                     Text("正在识别主体…").font(.callout).foregroundStyle(.secondary)
                 }
+                if edit?.kind == .volumetricLight {
+                    Button("提取深度") { Task { await session.extractDepth() } }
+                        .help("关闭滤镜，把雾气所依据的深度添加为新图层：白色为近，黑色为远")
+                        .disabled(volumetricWaiting)
+                }
                 Button("确定") { Task { await session.commitFilter() } }
                     .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
-                    .disabled(edit?.kind.isAutomatic == true && (edit?.preparing == true || edit?.previewError != nil))
+                    .disabled(edit?.kind.isAutomatic == true && (edit?.preparing == true || edit?.previewError != nil) || volumetricWaiting)
             }
         }
         .onPreferenceChange(LabelWidthKey.self) { labelWidth = max(60, $0) }
         .padding(24)
-        .frame(width: isCameraRaw ? FloatingPanelController.dockedWidth : 380)
+        // Volumetric Light's a little wider: Extract Depth shares the row with Cancel and OK.
+        .frame(width: isCameraRaw ? FloatingPanelController.dockedWidth : edit?.kind == .volumetricLight ? 440 : 380)
         .frame(maxHeight: isCameraRaw ? .infinity : nil, alignment: .top)
         .fixedSize(horizontal: false, vertical: !isCameraRaw)
 
@@ -244,6 +257,7 @@ struct FilterSheet: View {
             session.previewGradientMapColor()
             session.previewVignetteColor()
             session.previewRimLightColor()
+            session.previewVolumetricLightColor()
             session.previewDitherColor()
         }
     }
@@ -373,6 +387,48 @@ struct FilterSheet: View {
 
     /// Lens Effects: which effect, then its own settings.
     /// Rim Light: Glow, then each light's color, angle, strength, width and choke, with room for up to three.
+    /// Volumetric Light's first preview, while it fetches the depth model or finds the subject: Extract Depth and OK
+    /// wait for it (the spinner says what for), and Cancel stays.
+    private var volumetricWaiting: Bool {
+        guard let edit, edit.kind == .volumetricLight else { return false }
+        return session.preparingDepth || edit.preparing && !VolumetricLighting.hasLooked(for: edit.hdrPreviewSource ?? edit.previewSource)
+    }
+
+    @ViewBuilder private var volumetricLightControls: some View {
+        let color = settings.volumetric.color
+        HStack(spacing: 8) {
+            Text("在画布上点按或拖动可移动光源")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button { session.openVolumetricLightColorPicker() } label: {
+                let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+                shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
+                    .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
+                    .overlay { shape.strokeBorder(.black, lineWidth: 1) }
+                    .frame(width: 24, height: 24)
+                    .contentShape(shape)
+            }
+            .buttonStyle(.plain)
+            .help("选择光源的颜色")
+        }
+        control("雾气", \.volumetric.haze, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("空气的浓厚程度：雾气被光照亮，主体前方较薄")
+        control("距离", \.volumetric.distance, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("雾气从场景多深处开始：低值一直延伸到镜头前，高值只留最远处有雾")
+        control("深度对比", \.volumetric.depthContrast, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("把挤在一起的深度拉开（如远处的城市），让雾气层层递进；0 保持模型识别的原始深度")
+        control("大小", \.volumetric.size, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("光源的大小")
+        control("强度", \.volumetric.intensity, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("光束的亮度")
+        control("长度", \.volumetric.length, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("光束从光源延伸的距离")
+        control("光柱", \.volumetric.shafts, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            .help("光束分离成一道道光柱的程度")
+        Toggle("保持主体清晰", isOn: flag(\.volumetric.keepsSubjectClear))
+            .help("让主体不被雾气笼罩；关闭时主体按自身距离被雾化，远处的人影会朦胧")
+    }
+
     @ViewBuilder private var rimLightControls: some View {
         let rim = settings.rimLight
         control("辉光", \.rimLight.glow, range: 0...100, unit: "%", decimals: 0, logarithmic: false)

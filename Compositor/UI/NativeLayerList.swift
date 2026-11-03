@@ -153,8 +153,7 @@ struct NativeLayerList: NSViewRepresentable {
             menu.addItem(NSMenuItem.separator())
 
             // 4. Create Clipping Mask / Release Clipping Mask
-            let clippingTitle = session.activeLayer?.maskSourceID != nil ? "释放剪贴蒙版" : "创建剪贴蒙版"
-            let clippingItem = NSMenuItem(title: clippingTitle, action: #selector(toggleClippingMaskAction), keyEquivalent: "")
+            let clippingItem = NSMenuItem(title: session.selectedClippingTitle, action: #selector(toggleClippingMaskAction), keyEquivalent: "")
             clippingItem.target = self
             clippingItem.isEnabled = validateMenuItem(clippingItem)
             menu.addItem(clippingItem)
@@ -185,19 +184,21 @@ struct NativeLayerList: NSViewRepresentable {
             mergeItem.isEnabled = validateMenuItem(mergeItem)
             menu.addItem(mergeItem)
 
-            // 7b. Convert to 16-Bit / Convert to 8-Bit
-            let depthTitle = session.activeLayer?.asset?.deep == nil ? "转换为 16 位" : "转换为 8 位"
-            let depthItem = NSMenuItem(title: depthTitle, action: #selector(convertDepthAction), keyEquivalent: "")
-            depthItem.target = self
-            depthItem.isEnabled = validateMenuItem(depthItem)
-            // An HDR layer can go to 16 bits as well as to 8.
-            if session.activeLayer?.asset?.isHDR == true {
-                let sixteenItem = NSMenuItem(title: "转换为 16 位", action: #selector(convertHDRToSixteenAction), keyEquivalent: "")
+            // 7b. Convert to 16-Bit / Convert to 8-Bit: whichever would change a selected layer, both for a mix (an HDR
+            // layer can go to 16 bits as well as to 8). Shown, greyed, for layers neither applies to.
+            let sixteen = session.canConvertToSixteenBit, eight = session.canConvertToEightBit
+            if sixteen || !eight {
+                let sixteenItem = NSMenuItem(title: "转换为 16 位", action: #selector(convertToSixteenBitAction), keyEquivalent: "")
                 sixteenItem.target = self
                 sixteenItem.isEnabled = validateMenuItem(sixteenItem)
                 menu.addItem(sixteenItem)
             }
-            menu.addItem(depthItem)
+            if eight {
+                let eightItem = NSMenuItem(title: "转换为 8 位", action: #selector(convertToEightBitAction), keyEquivalent: "")
+                eightItem.target = self
+                eightItem.isEnabled = validateMenuItem(eightItem)
+                menu.addItem(eightItem)
+            }
 
             menu.addItem(NSMenuItem.separator())
 
@@ -238,12 +239,20 @@ struct NativeLayerList: NSViewRepresentable {
 
             menu.addItem(NSMenuItem.separator())
 
-            // 12. Hide Layer / Show Layer
-            let visibilityTitle = session.activeLayer?.isVisible == false ? "显示图层" : "隐藏图层"
-            let visibilityItem = NSMenuItem(title: visibilityTitle, action: #selector(toggleVisibilityAction), keyEquivalent: "")
+            // 12. Hide Layer / Show Layer, or Layers with several selected
+            let visibilityItem = NSMenuItem(title: session.visibilityTitle, action: #selector(toggleVisibilityAction), keyEquivalent: "")
             visibilityItem.target = self
             visibilityItem.isEnabled = validateMenuItem(visibilityItem)
             menu.addItem(visibilityItem)
+
+            menu.addItem(NSMenuItem.separator())
+
+            // 13. Export Layer as PNG… / Export Layers as PNGs…
+            let exportTitle = session.selectedLayerIDs.count > 1 ? "将多个图层导出为 PNG…" : "将图层导出为 PNG…"
+            let exportItem = NSMenuItem(title: exportTitle, action: #selector(exportLayersAction), keyEquivalent: "")
+            exportItem.target = self
+            exportItem.isEnabled = validateMenuItem(exportItem)
+            menu.addItem(exportItem)
 
             return menu
         }
@@ -257,7 +266,7 @@ struct NativeLayerList: NSViewRepresentable {
             case #selector(deleteLayerAction):
                 return session.canEditLayers && session.activeLayer != nil
             case #selector(toggleClippingMaskAction):
-                return session.activeLayerID.map { session.canToggleClippingMask($0) } ?? false
+                return session.canToggleSelectedClipping
             case #selector(groupSelectedLayersAction):
                 return session.canEditLayers && session.document != nil && (session.document?.layers.count ?? 0) < 10_000 && !session.selectedLayerIDs.isEmpty
             case #selector(ungroupLayersAction):
@@ -266,8 +275,10 @@ struct NativeLayerList: NSViewRepresentable {
                 return session.canEditLayers && session.activeLayer?.parentID != nil
             case #selector(mergeLayersAction):
                 return session.canMergeLayers
-            case #selector(convertDepthAction), #selector(convertHDRToSixteenAction):
-                return session.canConvertLayerDepth
+            case #selector(convertToSixteenBitAction):
+                return session.canConvertToSixteenBit
+            case #selector(convertToEightBitAction):
+                return session.canConvertToEightBit
             case #selector(addWhiteMaskAction), #selector(addBlackMaskAction):
                 return session.canEditMask && session.activeLayer?.mask == nil
             case #selector(toggleMaskAction):
@@ -278,12 +289,19 @@ struct NativeLayerList: NSViewRepresentable {
                 return session.canEditLayers && session.activeLayer?.mask != nil && session.activeLayer?.isGroup == false && session.activeLayer?.adjustment == nil
             case #selector(toggleVisibilityAction):
                 return session.canEditLayers && session.activeLayer != nil
+            case #selector(exportLayersAction):
+                return session.canStartProjectOperation && session.activeLayer != nil && session.exportsLayers != nil
             default:
                 if menuItem.submenu != nil && menuItem.title == "添加蒙版" {
                     return session.canEditMask && session.activeLayer?.mask == nil
                 }
                 return true
             }
+        }
+
+        @objc func exportLayersAction(_ sender: Any?) {
+            guard let export = session.exportsLayers else { return }
+            Task { await export() }
         }
 
         @objc func duplicateLayerAction(_ sender: Any?) {
@@ -300,7 +318,7 @@ struct NativeLayerList: NSViewRepresentable {
         }
 
         @objc func toggleClippingMaskAction(_ sender: Any?) {
-            if let id = session.activeLayerID { session.toggleClippingMask(id) }
+            session.toggleSelectedClipping()
         }
 
         @objc func groupSelectedLayersAction(_ sender: Any?) {
@@ -319,12 +337,12 @@ struct NativeLayerList: NSViewRepresentable {
             session.mergeLayers()
         }
 
-        @objc func convertDepthAction(_ sender: Any?) {
-            session.convertLayerDepth()
+        @objc func convertToSixteenBitAction(_ sender: Any?) {
+            session.convertLayers(toSixteenBit: true)
         }
 
-        @objc func convertHDRToSixteenAction(_ sender: Any?) {
-            session.convertHDRToSixteenBit()
+        @objc func convertToEightBitAction(_ sender: Any?) {
+            session.convertLayers(toSixteenBit: false)
         }
 
         @objc func addWhiteMaskAction(_ sender: Any?) {
@@ -356,8 +374,7 @@ struct NativeLayerList: NSViewRepresentable {
         }
 
         @objc func toggleVisibilityAction(_ sender: Any?) {
-            guard let id = session.activeLayerID else { return }
-            session.toggleLayerVisibility(id)
+            session.toggleSelectedLayersVisibility()
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int { rows.count }

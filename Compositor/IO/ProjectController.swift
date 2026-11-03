@@ -13,7 +13,10 @@ final class ProjectController {
     var canStart: Bool {
         session.canStartProjectOperation && workspace?.isManaging != true
     }
-    init(session: EditorSession) { self.session = session }
+    init(session: EditorSession) {
+        self.session = session
+        session.exportsLayers = { [weak self] in await self?.exportLayers() }
+    }
 
     private func begin() -> Bool {
         guard session.canStartProjectOperation else { return false }
@@ -51,6 +54,88 @@ final class ProjectController {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do { try await ImageExporter.shared.exportPNG(snapshot, to: url) }
         catch { await showError("无法导出 PNG", error: error) }
+    }
+
+    /// The layer list's Export Layers as PNGs…: each selected layer on its own, trimmed to its pixels and named after it.
+    /// One layer goes to a save panel; several to a folder, replacing files of the same names there once asked.
+    func exportLayers() async {
+        guard session.document != nil, begin() else { return }
+        defer { session.isProjectBusy = false }
+        guard let snapshot = session.projectSnapshot() else { return }
+        let selected = session.selectedLayerIDs.isEmpty ? Set(session.activeLayerID.map { [$0] } ?? []) : session.selectedLayerIDs
+        // Top first, as the panel lists them, so the upper of two layers of the same name keeps it.
+        let layers = snapshot.manifest.layers.reversed().filter { selected.contains($0.id) }
+        guard !layers.isEmpty else { return }
+        var used: Set<String> = []
+        let names = layers.map { layer in
+            let base = Self.fileName(layer.name)
+            var name = base, number = 2
+            while !used.insert(name.lowercased()).inserted { name = "\(base) \(number)"; number += 1 }
+            return name + ".png"
+        }
+        let urls: [URL]
+        let folder: URL
+        if layers.count == 1 {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.png]
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            panel.title = "将图层导出为 PNG"
+            panel.nameFieldStringValue = names[0]
+            guard await run(panel), let url = panel.url else { return }
+            urls = [url]
+            folder = url
+        } else {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.title = "将 \(layers.count) 个图层导出为 PNG"
+            panel.message = "为图层的 PNG 选择一个文件夹。"
+            panel.prompt = "Export"
+            guard await run(panel), let url = panel.url else { return }
+            urls = names.map { url.appendingPathComponent($0) }
+            folder = url
+            let existing = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+            if !existing.isEmpty {
+                let alert = NSAlert()
+                alert.messageText = existing.count == 1 ? "“\(existing[0].lastPathComponent)” 已存在。要替换吗？"
+                    : "\(existing.count) of these files already exist in “\(url.lastPathComponent)”. Replace them?"
+                alert.addButton(withTitle: "Replace")
+                alert.addButton(withTitle: "Cancel")
+                guard await show(alert) == .alertFirstButtonReturn else { return }
+            }
+        }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        var empty: [String] = []
+        do {
+            for (layer, url) in zip(layers, urls) {
+                guard let data = try await ImageExporter.shared.layerPNGData(snapshot, layer: layer.id) else {
+                    empty.append(layer.name); continue
+                }
+                try await ImageExporter.shared.write(data, to: url)
+            }
+        } catch { await showError("无法导出图层", error: error); return }
+        if !empty.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = empty.count == 1 ? "“\(empty[0])” 没有可导出的内容" : "\(empty.count) 个图层没有可导出的内容"
+            alert.informativeText = "A layer with no visible pixels, such as an adjustment layer, isn’t saved as a PNG."
+            alert.addButton(withTitle: "OK")
+            _ = await show(alert)
+        }
+    }
+
+    /// A layer's name as a file's: without the characters Finder can't take, and never empty.
+    static func fileName(_ name: String) -> String {
+        let cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty || cleaned.hasPrefix(".") ? "Layer" + cleaned : cleaned
+    }
+
+    private func run(_ panel: NSSavePanel) async -> Bool {
+        if let window { return await panel.beginSheetModal(for: window) == .OK }
+        return await panel.begin() == .OK
     }
 
     /// File › Export As…: still images or animation timelines, sized and previewed first. Export JPEG…

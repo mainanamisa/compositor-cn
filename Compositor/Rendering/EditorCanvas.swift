@@ -7,10 +7,12 @@ struct EditorCanvas: NSViewRepresentable {
     func updateNSView(_ view: CanvasView, context: Context) {
         view.consumeFocusRequest(session.canvasFocusRequest)
         _ = session.showsTransformControls // observed here so ⌘H redraws the transform box at once
+        _ = session.hiddenSelectionEdges // and the selection's outline
         _ = session.showsGrid
         _ = session.layoutGrid
         _ = session.gridAppearance
         _ = session.showsGuides
+        _ = session.extrasHideGuides
         _ = session.guideDrag
         _ = session.document?.guides
         view.synchronizeDisplay()
@@ -119,6 +121,8 @@ final class CanvasView: NSView {
     private var progressiveDrag: GradientHandle?
     /// RGB Split's center being dragged.
     private var rgbSplitDrag = false
+    /// Volumetric Light's light being dragged on the canvas.
+    private var volumetricDrag = false
     private var antsTimer: Timer?
     private var modifierMonitor: Any?
     private var sampleClickMonitor: Any?
@@ -140,6 +144,9 @@ final class CanvasView: NSView {
     private var marqueeConstrainArmed = true
     /// The Marquee draft's latest drag point, so a Shift change can reshape it without a mouse move.
     private var marqueeDragPixel: CGPoint?
+    /// Where the pointer and the Marquee's starting corner were when Space went down mid-drag: while it's held, the box
+    /// moves with the pointer rather than resizing, as in Photoshop.
+    private var marqueeMoveStart: (pixel: CGPoint, anchor: CGPoint, size: CGSize)?
     /// While a Marquee is dragged against or past the canvas edge, pans the view toward the pointer.
     private var marqueeAutoscroll: Timer?
     private var marqueeAutoscrollPoint: CGPoint?
@@ -1828,6 +1835,12 @@ final class CanvasView: NSView {
             synchronizeDisplay()
             return
         }
+        if session.filterEdit?.kind == .volumetricLight, !spaceHeld, let document = session.document {
+            session.moveVolumetricLight(to: session.viewport.documentPoint(from: point, documentSize: document.size))
+            volumetricDrag = true
+            synchronizeDisplay()
+            return
+        }
         if session.levels?.sampleMode != nil, !spaceHeld, let document = session.document {
             session.sampleLevels(at: session.viewport.documentPoint(from: point, documentSize: document.size))
             FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("levelsPanel"))
@@ -1924,6 +1937,11 @@ final class CanvasView: NSView {
         }
         if rgbSplitDrag, let document = session.document {
             session.moveRGBSplitCenter(to: session.viewport.documentPoint(from: point, documentSize: document.size))
+            synchronizeDisplay()
+            return
+        }
+        if volumetricDrag, let document = session.document {
+            session.moveVolumetricLight(to: session.viewport.documentPoint(from: point, documentSize: document.size))
             synchronizeDisplay()
             return
         }
@@ -2140,8 +2158,9 @@ final class CanvasView: NSView {
         window?.invalidateCursorRects(for: self)
     }
     override func mouseUp(with event: NSEvent) {
-        if rgbSplitDrag {
+        if rgbSplitDrag || volumetricDrag {
             rgbSplitDrag = false
+            volumetricDrag = false
             FloatingPanelController.refocus(NSUserInterfaceItemIdentifier("filterPanel"))
             return
         }
@@ -2341,6 +2360,8 @@ final class CanvasView: NSView {
         } else if event.keyCode == 49 {
             panPhysicalKey = physicalKey
             spaceHeld = true
+            // Drawing a Marquee, Space moves the box rather than panning: the cursor stays as it is.
+            if session.lassoDraft?.anchor != nil { return }
             updateBrushCursor()
             window?.invalidateCursorRects(for: self)
             refreshPointerCursor()
@@ -2386,6 +2407,7 @@ final class CanvasView: NSView {
         if event.keyCode == panPhysicalKey || (panPhysicalKey == nil && event.keyCode == 49) {
             panPhysicalKey = nil
             spaceHeld = false
+            if session.lassoDraft?.anchor != nil { return }
             updateBrushCursor()
             window?.invalidateCursorRects(for: self)
             refreshPointerCursor()
@@ -2480,8 +2502,23 @@ final class CanvasView: NSView {
 
     private func dragMarqueeDraft(to pixel: CGPoint, flags: NSEvent.ModifierFlags) {
         if !flags.contains(.shift) { marqueeConstrainArmed = true }
-        marqueeDragPixel = pixel
-        session.dragMarquee(to: snappedCorner(pixel, flags: flags), square: marqueeConstrainArmed && flags.contains(.shift), fromCenter: false)
+        defer { marqueeDragPixel = pixel }
+        guard spaceHeld, let draft = session.lassoDraft, let anchor = draft.anchor, let first = draft.points.first else {
+            marqueeMoveStart = nil
+            session.dragMarquee(to: snappedCorner(pixel, flags: flags), square: marqueeConstrainArmed && flags.contains(.shift), fromCenter: false)
+            return
+        }
+        // Space held: the box keeps its size and follows the pointer, its corners on whole pixels.
+        if marqueeMoveStart == nil {
+            let box = draft.points.dropFirst().reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+            let far = CGPoint(x: anchor.x == box.minX ? box.maxX : box.minX, y: anchor.y == box.minY ? box.maxY : box.minY)
+            marqueeMoveStart = (marqueeDragPixel ?? pixel, anchor, CGSize(width: far.x - anchor.x, height: far.y - anchor.y))
+        }
+        guard let start = marqueeMoveStart else { return }
+        let moved = CGPoint(x: (start.anchor.x + pixel.x - start.pixel.x).rounded(), y: (start.anchor.y + pixel.y - start.pixel.y).rounded())
+        session.snapGuides = ([], [])
+        session.moveMarqueeAnchor(to: moved)
+        session.dragMarquee(to: CGPoint(x: moved.x + start.size.width, y: moved.y + start.size.height), square: false, fromCenter: false)
     }
 
     /// Freehand starts an outline to drag. Polygonal adds a corner per click and closes on
@@ -2492,6 +2529,7 @@ final class CanvasView: NSView {
         // A Shift held at the press means Add; for the Marquee it squares only once pressed afresh.
         marqueeConstrainArmed = !event.modifierFlags.contains(.shift)
         marqueeDragPixel = nil
+        marqueeMoveStart = nil
         let pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
         guard let draft = session.lassoDraft, draft.kind == .polygonal else {
             // Cmd-drag inside the selection cuts and moves its pixels (Photoshop's temporary Move tool).
@@ -2532,7 +2570,7 @@ final class CanvasView: NSView {
 
     /// Marching ants animate only while a visible selection exists.
     private func updateAntsTimer() {
-        let active = session.selection?.isEmpty == false && window != nil
+        let active = session.selection?.isEmpty == false && session.showsSelectionEdges && window != nil
         if active, antsTimer == nil {
             let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in
                 // A redraw still pending skips this tick: a slow outline stutters rather than queuing redraws forever.
