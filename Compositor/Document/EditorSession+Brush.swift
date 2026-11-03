@@ -246,8 +246,8 @@ extension EditorSession {
         endEdit()
     }
     /// Tools where number keys set opacity: the brush or gradient opacity, or with
-    /// Move/Transform the opacity of the selected layers.
-    var usesOpacityKeys: Bool { tool.isBrushTool || tool == .gradient || tool == .move }
+    /// Move/Transform and the selection tools the opacity of the selected layers.
+    var usesOpacityKeys: Bool { tool.isBrushTool || tool == .gradient || tool == .move || tool.isSelectionTool }
 
     /// Photoshop-style opacity keys: 1 = 10% … 9 = 90%, 0 = 100%.
     /// Two digits typed quickly set an exact value (4 then 5 = 45%, 0 then 5 = 5%).

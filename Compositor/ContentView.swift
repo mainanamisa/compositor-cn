@@ -9,12 +9,12 @@ struct ContentView: View {
     var applicationDelegate: CompositorApplicationDelegate? = nil
     @Environment(\.openWindow) private var openWindow
     @State private var canvasFrame: CGRect = .zero
-    @State private var levelsPanel = FloatingPanelController(name: "levelsPanel")
-    @State private var adjustmentPanel = FloatingPanelController(name: "adjustmentPanel")
-    @State private var selectionAmountPanel = FloatingPanelController(name: "selectionAmountPanel")
-    @State private var colorRangePanel = FloatingPanelController(name: "colorRangePanel")
-    @State private var filterPanel = FloatingPanelController(name: "filterPanel")
-    @State private var effectsPanel = FloatingPanelController(name: "effectsPanel")
+    @State private var levelsPanel = FloatingPanelController(name: "levelsPanel", sharing: "editPanel")
+    @State private var adjustmentPanel = FloatingPanelController(name: "adjustmentPanel", sharing: "editPanel")
+    @State private var selectionAmountPanel = FloatingPanelController(name: "selectionAmountPanel", sharing: "editPanel")
+    @State private var colorRangePanel = FloatingPanelController(name: "colorRangePanel", sharing: "editPanel")
+    @State private var filterPanel = FloatingPanelController(name: "filterPanel", sharing: "editPanel")
+    @State private var effectsPanel = FloatingPanelController(name: "effectsPanel", sharing: "editPanel")
     @State private var isDropTargeted = false
     /// The window's width, so the tab strip can use the toolbar's free space.
     @State private var windowWidth: CGFloat = 1180
@@ -344,6 +344,9 @@ struct ContentView: View {
                 Text(session.viewport.zoom, format: .percent.precision(.fractionLength(0...1)))
                     .frame(width: 62, alignment: .leading).accessibilityIdentifier("zoomStatus")
                 Text("\(document.width) × \(document.height) px").accessibilityIdentifier("canvasDimensions")
+                if let size = session.selectionSize {
+                    Text("选区 \(size.width) × \(size.height) px").accessibilityIdentifier("selectionDimensions")
+                }
                 Text("sRGB · 透明")
             } else { Text("就绪") }
             Spacer()

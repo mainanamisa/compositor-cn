@@ -142,9 +142,15 @@ struct CompositorApp: App {
                         Toggle("导航器（300% 及以上）", isOn: $showsNavigator)
                         Toggle("像素网格（800% 及以上）", isOn: Binding(get: { session.showsPixelGrid },
                                                                               set: { session.showsPixelGrid = $0 }))
-                        Toggle("显示变换控件", isOn: Binding(get: { session.showsTransformControls },
-                                                                          set: { session.showsTransformControls = $0 }))
-                            .configuredKeyboardShortcut("h").disabled(session.tool != .move || session.document == nil)
+                        // ⌘H: the Move tool's transform box there; the selection's outline and the guides everywhere else.
+                        if session.tool == .move {
+                            Toggle("显示变换控件", isOn: Binding(get: { session.showsTransformControls },
+                                                                              set: { session.showsTransformControls = $0 }))
+                                .configuredKeyboardShortcut("h").disabled(session.document == nil)
+                        } else {
+                            Toggle("显示额外内容", isOn: Binding(get: { session.showsExtras }, set: { session.showsExtras = $0 }))
+                                .configuredKeyboardShortcut("h").disabled(session.document == nil)
+                        }
                         Divider()
                         // Print: the canvas as the chosen CMYK profile will print it, tucked in a submenu as few need it. No
                         // shortcuts (Photoshop's ⌘Y sits by ⌘U and would be hit by mistake); Search Commands finds them.
@@ -200,7 +206,7 @@ struct CompositorApp: App {
                                 .disabled(!session.canClearGuides)
                         }
                     }
-                    // ⌘H toggles the Move tool's transform controls instead of hiding the app, so Hide keeps its
+                    // ⌘H toggles the transform controls or extras instead of hiding the app, so Hide keeps its
                     // place in the app menu without the shortcut.
                     CommandGroup(replacing: .appVisibility) {
                         Button("隐藏 Compositor") { NSApp.hide(nil) }
@@ -208,6 +214,8 @@ struct CompositorApp: App {
                             .configuredKeyboardShortcut("h", modifiers: [.command, .option])
                         Button("全部显示") { NSApp.unhideAllApplications(nil) }
                     }
+                    // No Services: it acts on selected text and files, which an image editor rarely has.
+                    CommandGroup(replacing: .systemServices) {}
                 }
                 CommandGroup(replacing: .pasteboard) {
                     // Canvas pixels when the canvas has focus; text fields keep their own editing.
@@ -368,11 +376,9 @@ struct CompositorApp: App {
                     Button(session.selection == nil ? "复制图层" : "通过拷贝新建图层") { session.layerViaCopy() }
                         .configuredKeyboardShortcut("j").disabled(!session.canCopyPixels && !(session.selection == nil && session.canEditLayers && session.activeLayer != nil))
                     Divider()
-                    Button(session.activeLayer?.maskSourceID == nil ? "创建剪贴蒙版" : "释放剪贴蒙版") {
-                        if let id = session.activeLayerID { session.toggleClippingMask(id) }
-                    }
+                    Button(session.selectedClippingTitle) { session.toggleSelectedClipping() }
                     .configuredKeyboardShortcut("g", modifiers: [.command, .option])
-                    .disabled(session.activeLayerID.map { !session.canToggleClippingMask($0) } ?? true)
+                    .disabled(!session.canToggleSelectedClipping)
                     Divider()
                     Button("图层编组") { session.groupSelectedLayers() }
                         .configuredKeyboardShortcut("g").disabled(!session.canEditLayers)
@@ -384,8 +390,8 @@ struct CompositorApp: App {
                         .configuredKeyboardShortcut("n", modifiers: [.command, .shift]).disabled(!session.canEditLayers)
                     Button("重命名图层…") { session.renamingLayerID = session.activeLayerID }
                         .disabled(!session.canEditLayers || session.activeLayer == nil)
-                    Button(session.activeLayer?.isVisible == false ? "显示图层" : "隐藏图层") {
-                        if let id = session.activeLayerID { session.toggleLayerVisibility(id) }
+                    Button(session.visibilityTitle) {
+                        session.toggleSelectedLayersVisibility()
                     }.disabled(!session.canEditLayers || session.activeLayer == nil)
                     Divider()
                     Button("上移图层") { session.moveActiveLayer(by: 1) }
@@ -395,6 +401,14 @@ struct CompositorApp: App {
                     Group {
                         Button(mergeMenuTitle(session.mergeTitle)) { session.mergeLayers() }
                             .configuredKeyboardShortcut("e").disabled(!session.canMergeLayers)
+                        // As in the Layers panel's menu: whichever would change a selected layer, both for a mix.
+                        if session.canConvertToSixteenBit || !session.canConvertToEightBit {
+                            Button("转换为 16 位") { session.convertLayers(toSixteenBit: true) }
+                                .disabled(!session.canConvertToSixteenBit)
+                        }
+                        if session.canConvertToEightBit {
+                            Button("转换为 8 位") { session.convertLayers(toSixteenBit: false) }
+                        }
                         Divider()
                         Button("水平翻转图层") { session.flipLayers(horizontally: true) }
                             .disabled(!session.canTransform)
@@ -459,6 +473,7 @@ extension FilterKind {
         case .rgbSplit: return "RGB 分离"
         case .lensEffects: return "镜头效果"
         case .rimLight: return "轮廓光"
+        case .volumetricLight: return "体积光"
         case .tonalContrast: return "色调对比度"
         case .lensCorrection: return "镜头校正"
         case .cameraRaw: return "Camera Raw 滤镜"

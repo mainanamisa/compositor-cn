@@ -74,10 +74,7 @@ struct ImageSizeSheet: View {
             let multiplier = unit == .centimeters ? 2.54 : 1.0
             return pixels * multiplier / 9600...pixels * multiplier
         }
-        let minimum = locked ? max(1, pixels / other) : 1.0
-        let dimensionLimit = locked ? min(30_000, 30_000 * pixels / other) : 30_000.0
-        let areaLimit = locked ? sqrt(100_000_000 * pixels / other) : 100_000_000 / other
-        let maximum = max(minimum, min(dimensionLimit, areaLimit))
+        let pixelRange = Self.scrubPixelRange(pixels: pixels, other: other, locked: locked)
         func displayed(_ count: Double) -> Double {
             switch unit {
             case .percent: return count / original * 100
@@ -86,7 +83,16 @@ struct ImageSizeSheet: View {
             case .pixels: return count
             }
         }
-        return displayed(minimum)...displayed(maximum)
+        return displayed(pixelRange.lowerBound)...displayed(pixelRange.upperBound)
+    }
+
+    static func scrubPixelRange(pixels: Double, other: Double, locked: Bool) -> ClosedRange<Double> {
+        let minimum = locked ? max(1, pixels / other) : 1.0
+        let sideLimit = Double(DocumentLimits.maxSide)
+        let surfaceLimit = Double(DocumentLimits.maxSurfacePixels)
+        let dimensionLimit = locked ? min(sideLimit, sideLimit * pixels / other) : sideLimit
+        let areaLimit = locked ? sqrt(surfaceLimit * pixels / other) : surfaceLimit / other
+        return minimum...max(minimum, min(dimensionLimit, areaLimit))
     }
 
     private func scrubSensitivity(isWidth: Bool) -> Double {
