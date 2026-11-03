@@ -62,12 +62,12 @@ import Testing
         let ids = s.document!.layers.map(\.id)
         // With the bottom layer among them, there's nothing under it to clip to.
         s.selectLayers(Set(ids), primary: ids[3])
-        #expect(!s.canToggleSelectedClipping && s.selectedClippingTitle == "Create Clipping Mask")
+        #expect(!s.canToggleSelectedClipping && s.selectedClippingTitle == "创建剪贴蒙版")
         s.selectLayers([ids[1], ids[2], ids[3]], primary: ids[3])
         #expect(s.canToggleSelectedClipping)
         s.toggleSelectedClipping()
         #expect(s.document?.layers.map(\.maskSourceID) == [nil, ids[0], ids[0], ids[0]], "all clip to the layer under the lowest")
-        #expect(s.selectedClippingTitle == "Release Clipping Mask")
+        #expect(s.selectedClippingTitle == "释放剪贴蒙版")
         s.undo()
         #expect(s.document?.layers.allSatisfy { $0.maskSourceID == nil } == true, "one undo step")
         s.redo()
@@ -76,7 +76,7 @@ import Testing
         #expect(s.document?.layers.map(\.maskSourceID) == [nil, ids[0], nil, nil])
         // Some clipped and some not: it clips the rest.
         s.selectLayers([ids[1], ids[3]], primary: ids[3])
-        #expect(s.selectedClippingTitle == "Create Clipping Mask")
+        #expect(s.selectedClippingTitle == "创建剪贴蒙版")
         s.toggleSelectedClipping()
         #expect(s.document?.layers.map(\.maskSourceID) == [nil, ids[0], nil, ids[2]])
     }
