@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     /// The Layers panel's width, remembered across launches.
-    @AppStorage("layersPanelWidth") private var layersPanelWidth = 252.0
+    @AppStorage("layersPanelWidth") private var layersPanelWidth = 261.0
     /// The tool last chosen within the rail's repair group (Spot Healing / Remove / Clone Stamp), so its slot
     /// keeps showing it, as Photoshop's grouped tools do.
     @AppStorage("repairTool") private var lastRepairTool = NavigationTool.spotHealing.rawValue
@@ -399,7 +399,9 @@ struct ContentView: View {
                 Text(session.viewport.zoom, format: .percent.precision(.fractionLength(0...1)))
                     .frame(width: 62, alignment: .leading).accessibilityIdentifier("zoomStatus")
                 Text("\(document.width) × \(document.height) px").accessibilityIdentifier("canvasDimensions")
-                if let size = session.selectionSize {
+                if let draft = session.shapeDraft, let size = session.dragOutSize {
+                    Text("\(draft.kind == .line ? "线条" : "形状") \(size.text)").accessibilityIdentifier("shapeDimensions")
+                } else if let size = session.selectionSize {
                     Text("选区 \(size.width) × \(size.height) px").accessibilityIdentifier("selectionDimensions")
                 }
                 Text("sRGB · 透明")

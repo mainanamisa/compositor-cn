@@ -180,6 +180,8 @@ struct CompositorApp: App {
                                     .configuredKeyboardShortcut("'").disabled(session.document == nil)
                                 Toggle("参考线", isOn: Binding(get: { session.showsGuides }, set: { session.showsGuides = $0 }))
                                     .configuredKeyboardShortcut(";").disabled(session.document == nil)
+                                Toggle("距离", isOn: Binding(get: { session.showsDistances }, set: { session.showsDistances = $0 }))
+                                    .disabled(session.document == nil)
                             }
                             Button("网格设置…") { Task { await applicationDelegate.projects.gridSettings() } }
                                 .disabled(session.document == nil)
@@ -469,6 +471,7 @@ extension FilterKind {
         case .motionBlur: return "动感模糊"
         case .progressiveBlur: return "渐进模糊"
         case .sharpen: return "锐化"
+        case .reduceNoise: return "减少杂色"
         case .addNoise: return "添加杂色"
         case .vignette: return "暗角"
         case .bloomGlow: return "泛光/辉光"
@@ -515,6 +518,7 @@ extension AdjustmentKind {
         case .lensEffects: return "镜头效果"
         case .tonalContrast: return "色调对比度"
         case .sharpen: return "锐化"
+        case .reduceNoise: return "减少杂色"
         }
     }
 }
