@@ -220,23 +220,28 @@ final class EditorSession {
             updateBusyIndicator()
         }
     }
-    /// True once `isProjectBusy` has lasted longer than `busyIndicatorDelay`.
-    private(set) var showsBusy = false
+    /// True once `isProjectBusy` has lasted longer than `busyIndicatorDelay`. Reading it also watches for a quicker
+    /// operation ending, which `isProjectBusy`, not observed, can't tell the UI: a menu drawn during a Magic Wand click
+    /// that selected what was already selected kept Deselect dimmed, with nothing after it to redraw the menu.
+    var showsBusy: Bool { _ = quickOperationsEnded; return busyShowing }
+    private var busyShowing = false
+    private var quickOperationsEnded = 0
     static let busyIndicatorDelay: Duration = .milliseconds(250)
     @ObservationIgnored private var busyIndicatorTask: Task<Void, Never>?
     private func updateBusyIndicator() {
         if isProjectBusy {
-            guard busyIndicatorTask == nil, !showsBusy else { return }
+            guard busyIndicatorTask == nil, !busyShowing else { return }
             busyIndicatorTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: Self.busyIndicatorDelay)
                 guard let self, !Task.isCancelled, self.isProjectBusy else { return }
-                self.showsBusy = true
+                self.busyShowing = true
                 self.busyIndicatorTask = nil
             }
         } else {
+            if busyIndicatorTask != nil { quickOperationsEnded += 1 }
             busyIndicatorTask?.cancel()
             busyIndicatorTask = nil
-            if showsBusy { showsBusy = false }
+            if busyShowing { busyShowing = false }
         }
     }
     private var projectWaiters: [CheckedContinuation<Void, Never>] = []
@@ -275,6 +280,10 @@ final class EditorSession {
     @ObservationIgnored var distortEffectsCache: [UUID: DistortEffectsCache] = [:]
     /// Document positions a move has just snapped to, drawn as guides while it lasts.
     @ObservationIgnored var snapGuides: (xs: [CGFloat], ys: [CGFloat]) = ([], [])
+    /// Pixel gaps the Move tool shows while a layer is dragged, or with Command held over another layer.
+    @ObservationIgnored var distanceLines: [DistanceLine] = []
+    /// A Move tool resize in progress: the layer's size, and where the pointer has the handle, in document pixels.
+    @ObservationIgnored var resizeSize: (text: String, corner: CGPoint)?
     /// Crop, resize and selection moves follow View › Snap (⇧⌘;) too: they had a Snap item of their own, which left
     /// the View menu with two called Snap.
     var snappingEnabled: Bool {
@@ -437,6 +446,13 @@ final class EditorSession {
             && selectionAmountOperation == nil
     }
     var showsRulers = ToolDefaults.bool("rulers", false) { didSet { ToolDefaults.set(showsRulers, "rulers") } }
+    /// View › Show › Distances: the Move tool's pixel gaps, while dragging and with Command held.
+    var showsDistances = ToolDefaults.bool("distances", false) {
+        didSet {
+            ToolDefaults.set(showsDistances, "distances")
+            if !showsDistances { distanceLines = [] }
+        }
+    }
     /// Master snap switch (View > Snap). On so today's layer/canvas snap keeps working.
     var snapEnabled = ToolDefaults.bool("snap", true) {
         didSet {

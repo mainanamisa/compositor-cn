@@ -181,6 +181,13 @@ struct FilterSheet: View {
                     .help("强化边缘和细节的程度")
                 control("半径", \.sharpenRadius, range: 0.1...20, unit: "px", decimals: 1, logarithmic: true)
                     .help("锐化细节的精细程度：小值突出清晰纹理，大值效果更强烈")
+            case .reduceNoise:
+                control("强度", \.reduceNoiseLuminance, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                    .help("从画面亮度中抚平颗粒的程度")
+                control("保留细节", \.reduceNoiseDetail, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                    .help("抚平颗粒时保留细微纹理和边缘的程度")
+                control("颜色噪点", \.reduceNoiseColor, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                    .help("将彩色斑点融入周围颜色的程度")
             case .bloomGlow:
                 control("数量", \.bloomAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                 control("半径", \.bloomRadius, range: 1...150, unit: "px", decimals: 0, logarithmic: true)
@@ -195,8 +202,11 @@ struct FilterSheet: View {
                 Text("正值校正向外弯曲的线条（桶形畸变）；负值校正向内弯曲的线条（枕形畸变）。")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            Toggle("预览", isOn: Binding(get: { edit?.preview ?? true },
-                                            set: { session.updateFilter(settings, preview: $0) }))
+            // Not for an adjustment layer: its eye in the layers panel shows the picture without it.
+            if session.adjustmentOriginal == nil {
+                Toggle("预览", isOn: Binding(get: { edit?.preview ?? true },
+                                                set: { session.updateFilter(settings, preview: $0) }))
+            }
             if let error = edit?.previewError {
                 Text(error).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
@@ -508,10 +518,10 @@ struct FilterSheet: View {
                 .help("How many spikes each light has, as the lens's aperture blades make them")
             }
         case .mist:
-            control("Strength", \.lens.mistStrength, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("How much light scatters: a soft halo around bright areas, and gently lifted shadows")
-            control("Size", \.lens.mistSize, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("How far the light spreads")
+            control("强度", \.lens.mistStrength, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光线散射的程度：亮部周围形成柔和光晕，暗部被轻轻提亮")
+            control("大小", \.lens.mistSize, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光线扩散的范围")
         case .prism:
             control("数量", \.lens.prismAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
             control("重影数", \.lens.prismCopies, range: 1...8, unit: "", decimals: 0, logarithmic: false)
