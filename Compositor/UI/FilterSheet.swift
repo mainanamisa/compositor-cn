@@ -154,20 +154,15 @@ struct FilterSheet: View {
             case .scanlines:
                 scanlinesControls
             case .vignette:
-                HStack(spacing: 8) {
-                    Text("颜色").frame(width: 95, alignment: .leading)
+                HStack(spacing: 10) {
+                    Text("颜色").frame(width: labelWidth, alignment: .leading)
+                    Spacer()
                     Button { session.openVignetteColorPicker() } label: {
-                        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        shape.fill(Color(.sRGB, red: settings.vignetteColor.red,
-                                         green: settings.vignetteColor.green, blue: settings.vignetteColor.blue))
-                            .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                            .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                            .frame(width: 24, height: 24)
-                            .contentShape(shape)
+                        ColorSwatch(color: Color(.sRGB, red: settings.vignetteColor.red,
+                                                 green: settings.vignetteColor.green, blue: settings.vignetteColor.blue))
                     }
                     .buttonStyle(.plain)
                     .help("选取暗角颜色")
-                    Spacer()
                 }
                 control("数量", \.vignetteAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                     .help("将所选颜色混合到边缘，中心保持不变")
@@ -384,12 +379,7 @@ struct FilterSheet: View {
 
     private func swatch(_ color: AdjustmentColor, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-            shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
-                .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                .frame(width: 24, height: 24)
-                .contentShape(shape)
+            ColorSwatch(color: Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
         }
         .buttonStyle(.plain)
         .help(help)
@@ -411,12 +401,7 @@ struct FilterSheet: View {
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button { session.openVolumetricLightColorPicker() } label: {
-                let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-                shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
-                    .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                    .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                    .frame(width: 24, height: 24)
-                    .contentShape(shape)
+                ColorSwatch(color: Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
             }
             .buttonStyle(.plain)
             .help("选择光源的颜色")
@@ -450,12 +435,7 @@ struct FilterSheet: View {
                 Spacer()
                 let color = light.color
                 Button { session.openRimLightColorPicker(index: index) } label: {
-                    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
-                        .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                        .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                        .frame(width: 24, height: 24)
-                        .contentShape(shape)
+                    ColorSwatch(color: Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
                 }
                 .buttonStyle(.plain)
                 .help("选择此光源的颜色")
@@ -639,15 +619,9 @@ struct GradientMapControls: View {
     private func color(_ value: AdjustmentColor) -> Color { Color(.sRGB, red: value.red, green: value.green, blue: value.blue) }
 
     private func swatch(_ title: String, _ value: AdjustmentColor, action: @escaping () -> Void) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return HStack(spacing: 8) {
             Button(action: action) {
-                shape
-                    .fill(color(value))
-                    .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                    .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                    .frame(width: 24, height: 24)
-                    .contentShape(shape)
+                ColorSwatch(color: color(value))
             }
             .buttonStyle(.plain)
             .help("选取\(title)颜色")

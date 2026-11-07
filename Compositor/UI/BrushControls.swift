@@ -38,17 +38,18 @@ struct BrushControls: View {
                     .pickerStyle(.segmented).labelsHidden().fixedSize()
                     .help("仅从当前图层取样，或从所有可见图层的显示效果取样")
                 }
-                Text("大小").scrubbable(sensitivity: 1.0, value: $session.brushSettings.diameter, range: 1...2000)
-                TextField("大小", value: Binding<Double>(get: { Double(session.brushSettings.diameter) },
-                    set: { session.brushSettings.diameter = $0.isFinite ? CGFloat(min(2000, max(1, $0))) : 40 }),
-                    format: .number.precision(.fractionLength(0)))
+                HStack(spacing: 6) {
+                    Text("大小").scrubbable(sensitivity: 1.0, value: $session.brushSettings.diameter, range: 1...2000)
+                    TextField("大小", value: Binding<Double>(get: { Double(session.brushSettings.diameter) },
+                        set: { session.brushSettings.diameter = $0.isFinite ? CGFloat(min(2000, max(1, $0))) : 40 }),
+                        format: .number.precision(.fractionLength(0)))
                     .frame(width: 48).textFieldStyle(.roundedBorder)
                     .arrowSteps(value: { Double(session.brushSettings.diameter) },
                                 change: { session.brushSettings.diameter = CGFloat(min(2000, max(1, $0))) })
                     .onChange(of: session.brushSettings.diameter) { _, value in
                         session.brushSettings.diameter = value.isFinite ? min(2000, max(1, value)) : 40
                     }
-                    .unitSuffix("px")
+                }
                 // Remove paints only a mask for the model: size is all it takes.
                 if session.tool != .remove {
                 // A pen's pressure, as Photoshop's buttons beside Size and Opacity: only once a tablet pen has
@@ -99,7 +100,6 @@ struct BrushControls: View {
                         .arrowSteps(value: { Double(session.brushSettings.blurRadius) },
                                     change: { session.brushSettings.blurRadius = CGFloat(min(50, max(0.5, $0))) })
                         .help("模糊柔化的范围，以像素为单位")
-                        .unitSuffix("px")
                 }
                 // Paint and Erase only: healing, cloning and smearing have their own feel.
                 if session.tool == .brush {
@@ -124,12 +124,7 @@ struct BrushControls: View {
                     HStack(spacing: 6) {
                         Text("颜色")
                         Button { session.openColorPicker(background: false) } label: {
-                            let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            shape.fill(session.foregroundColor.swiftUI)
-                                .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1) }
-                                .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                                .frame(width: 34, height: 18)
-                                .contentShape(shape)
+                            ColorSwatch(color: session.foregroundColor.swiftUI)
                         }
                         .buttonStyle(.plain)
                         .disabled(!session.canEditPalette)
