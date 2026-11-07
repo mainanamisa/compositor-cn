@@ -347,7 +347,8 @@ struct ContentView: View {
                 if let draft = session.shapeDraft, let size = session.dragOutSize {
                     Text("\(draft.kind == .line ? "线条" : "形状") \(size.text)").accessibilityIdentifier("shapeDimensions")
                 } else if let size = session.selectionSize {
-                    Text("选区 \(size.width) × \(size.height) px").accessibilityIdentifier("selectionDimensions")
+                    Text("选区 \(size.width) × \(size.height) px" + (session.selectionFeather.map { " · 羽化 \($0) px" } ?? ""))
+                        .accessibilityIdentifier("selectionDimensions")
                 }
                 Text("sRGB · 透明")
             } else { Text("就绪") }

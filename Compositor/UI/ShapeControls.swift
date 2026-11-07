@@ -14,15 +14,15 @@ struct ShapeControls: View {
             }
             .pickerStyle(.segmented).labelsHidden().fixedSize()
             .help("按 Shift-U（或 Tab）在矩形、椭圆和直线之间切换")
-            Button { session.openColorPicker(background: false) } label: {
-                let swatch = RoundedRectangle(cornerRadius: 3, style: .continuous)
-                swatch.fill(Color(nsColor: session.foregroundColor.nsColor))
-                    .overlay { swatch.strokeBorder(.black.opacity(0.5), lineWidth: 1) }
-                    .frame(width: 36, height: 18)
+            HStack(spacing: 6) {
+                Text("颜色")
+                Button { session.openColorPicker(background: false) } label: {
+                    ColorSwatch(color: Color(nsColor: session.foregroundColor.nsColor))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("填充颜色")
+                .help("形状以前景色填充；点按可更改")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("填充颜色")
-            .help("形状以前景色填充；点按可更改")
             if session.shapeKind == .line {
                 HStack(spacing: 6) {
                     Text("宽度").scrubbable(sensitivity: 1, value: $session.shapeLineWidth, range: 1...5000)
@@ -36,7 +36,6 @@ struct ShapeControls: View {
                         .frame(width: 48).textFieldStyle(.roundedBorder)
                         .arrowSteps(value: { session.shapeLineWidth },
                                     change: { session.shapeLineWidth = min(5000, max(1, $0)) })
-                        .unitSuffix("px")
                 }
                 HStack(spacing: 6) {
                     Text("样式")
@@ -71,7 +70,6 @@ struct ShapeControls: View {
                         .frame(width: 48).textFieldStyle(.roundedBorder)
                         .arrowSteps(value: { Double(session.shapeCornerRadius) },
                                     change: { session.shapeCornerRadius = min(5000, max(0, CGFloat($0))) })
-                        .unitSuffix("px")
                 }
                 .help("将矩形的角按此像素数倒圆；0 保持直角")
                 Toggle("平滑圆角", isOn: $session.shapeSmoothing)

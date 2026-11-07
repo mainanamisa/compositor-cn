@@ -154,20 +154,15 @@ struct FilterSheet: View {
             case .scanlines:
                 scanlinesControls
             case .vignette:
-                HStack(spacing: 8) {
-                    Text("颜色").frame(width: 95, alignment: .leading)
+                HStack(spacing: 10) {
+                    Text("颜色").frame(width: labelWidth, alignment: .leading)
+                    Spacer()
                     Button { session.openVignetteColorPicker() } label: {
-                        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        shape.fill(Color(.sRGB, red: settings.vignetteColor.red,
-                                         green: settings.vignetteColor.green, blue: settings.vignetteColor.blue))
-                            .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                            .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                            .frame(width: 24, height: 24)
-                            .contentShape(shape)
+                        ColorSwatch(color: Color(.sRGB, red: settings.vignetteColor.red,
+                                                 green: settings.vignetteColor.green, blue: settings.vignetteColor.blue))
                     }
                     .buttonStyle(.plain)
                     .help("选取暗角颜色")
-                    Spacer()
                 }
                 control("数量", \.vignetteAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                     .help("将所选颜色混合到边缘，中心保持不变")
@@ -183,9 +178,9 @@ struct FilterSheet: View {
                     .help("锐化细节的精细程度：小值突出清晰纹理，大值效果更强烈")
             case .reduceNoise:
                 control("强度", \.reduceNoiseLuminance, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                    .help("从画面亮度中抚平颗粒的程度")
+                    .help("平滑画面亮度中噪点的程度")
                 control("保留细节", \.reduceNoiseDetail, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                    .help("抚平颗粒时保留细微纹理和边缘的程度")
+                    .help("平滑噪点时保留细微纹理和边缘的程度")
                 control("颜色噪点", \.reduceNoiseColor, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
                     .help("将彩色斑点融入周围颜色的程度")
             case .bloomGlow:
@@ -288,6 +283,7 @@ struct FilterSheet: View {
             control("文字大小", \.dither.textSize, range: DitherSettings.textSizeRange, unit: "px", decimals: 0, logarithmic: false)
                 .help("每行字符的高度")
         }
+
         if dither.style.isHalftone {
             control("单元大小", \.dither.cellSize, range: DitherSettings.cellSizeRange, unit: "px", decimals: 0, logarithmic: false)
         }
@@ -383,12 +379,7 @@ struct FilterSheet: View {
 
     private func swatch(_ color: AdjustmentColor, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-            shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
-                .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                .frame(width: 24, height: 24)
-                .contentShape(shape)
+            ColorSwatch(color: Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
         }
         .buttonStyle(.plain)
         .help(help)
@@ -410,12 +401,7 @@ struct FilterSheet: View {
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button { session.openVolumetricLightColorPicker() } label: {
-                let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-                shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
-                    .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                    .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                    .frame(width: 24, height: 24)
-                    .contentShape(shape)
+                ColorSwatch(color: Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
             }
             .buttonStyle(.plain)
             .help("选择光源的颜色")
@@ -449,12 +435,7 @@ struct FilterSheet: View {
                 Spacer()
                 let color = light.color
                 Button { session.openRimLightColorPicker(index: index) } label: {
-                    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    shape.fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
-                        .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                        .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                        .frame(width: 24, height: 24)
-                        .contentShape(shape)
+                    ColorSwatch(color: Color(.sRGB, red: color.red, green: color.green, blue: color.blue))
                 }
                 .buttonStyle(.plain)
                 .help("选择此光源的颜色")
@@ -487,35 +468,35 @@ struct FilterSheet: View {
 
     @ViewBuilder private var lensEffectsControls: some View {
         HStack(spacing: 10) {
-            Text("Effect")
-            Picker("Effect", selection: Binding(get: { settings.lens.effect }, set: { new in update { $0.lens.effect = new } })) {
-                ForEach(LensEffect.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            Text("效果")
+            Picker("效果", selection: Binding(get: { settings.lens.effect }, set: { new in update { $0.lens.effect = new } })) {
+                ForEach(LensEffect.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
             .labelsHidden().fixedSize()
         }
         switch settings.lens.effect {
         case .anamorphicFlare:
-            control("Amount", \.lens.flareAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-            control("Length", \.lens.flareLength, range: 1...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("How far the streaks reach across the picture")
-            control("Threshold", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("How bright a light has to be to flare; near 100, only the biggest, brightest spots")
-            control("Blue", \.lens.flareBlue, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("How far the lens's coatings turn each streak blue along its length; none keeps the light's own color")
+            control("数量", \.lens.flareAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("长度", \.lens.flareLength, range: 1...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光斑条纹在画面中延伸的长度")
+            control("阈值", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光源要多亮才会产生光斑；接近 100 时只有最大、最亮的光点")
+            control("蓝色", \.lens.flareBlue, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("镜片镀膜使条纹沿长度偏蓝的程度；为 0 时保留光源本身的颜色")
         case .starburst:
-            control("Amount", \.lens.starAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-            control("Length", \.lens.starLength, range: 2...40, unit: "%", decimals: 0, logarithmic: false)
-                .help("How far the spikes reach")
-            control("Threshold", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("How bright a light has to be to sparkle; near 100, only the biggest, brightest spots")
-            control("Angle", \.lens.starAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
+            control("数量", \.lens.starAmount, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+            control("长度", \.lens.starLength, range: 2...40, unit: "%", decimals: 0, logarithmic: false)
+                .help("星芒延伸的长度")
+            control("阈值", \.lens.threshold, range: 50...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光源要多亮才会产生星芒；接近 100 时只有最大、最亮的光点")
+            control("角度", \.lens.starAngle, range: -180...180, unit: "°", decimals: 0, logarithmic: false)
             HStack(spacing: 10) {
-                Text("Points")
-                Picker("Points", selection: Binding(get: { settings.lens.starPoints }, set: { new in update { $0.lens.starPoints = new } })) {
+                Text("星芒数")
+                Picker("星芒数", selection: Binding(get: { settings.lens.starPoints }, set: { new in update { $0.lens.starPoints = new } })) {
                     ForEach(LensEffectSettings.starPointChoices, id: \.self) { Text("\($0)").tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("How many spikes each light has, as the lens's aperture blades make them")
+                .help("每个光源的星芒数量，如同镜头光圈叶片形成的效果")
             }
         case .mist:
             control("强度", \.lens.mistStrength, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
@@ -541,22 +522,22 @@ struct FilterSheet: View {
                     Text("双侧").tag(true)
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .help("重影只在画面一侧，或向两侧展开")
+                .help("重影只出现在画面一侧，或向两侧展开")
             }
         case .bokeh:
-            control("Size", \.lens.bokehRadius, range: LensEffectSettings.bokehSizes, unit: "%", decimals: 1, logarithmic: false)
-                .help("How far out of focus: the size of each disc")
-            control("Brightness", \.lens.bokehBrightness, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("How brightly lights open into discs")
-            control("Ring", \.lens.bokehRing, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
-                .help("Light gathered at each disc's rim, as some lenses draw it")
+            control("大小", \.lens.bokehRadius, range: LensEffectSettings.bokehSizes, unit: "%", decimals: 1, logarithmic: false)
+                .help("失焦程度：每个光斑的大小")
+            control("亮度", \.lens.bokehBrightness, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光点展开成光斑的亮度")
+            control("光环", \.lens.bokehRing, range: 0...100, unit: "%", decimals: 0, logarithmic: false)
+                .help("光斑边缘聚光的程度，类似某些镜头的成像")
             HStack(spacing: 10) {
-                Text("Shape")
-                Picker("Shape", selection: Binding(get: { settings.lens.bokehShape }, set: { new in update { $0.lens.bokehShape = new } })) {
-                    ForEach(BokehShape.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Text("形状")
+                Picker("形状", selection: Binding(get: { settings.lens.bokehShape }, set: { new in update { $0.lens.bokehShape = new } })) {
+                    ForEach(BokehShape.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
                 .labelsHidden().fixedSize()
-                .help("The aperture's shape: round wide open, a hexagon of blades, an anamorphic oval, or a cat's eye toward the edges")
+                .help("光圈的形状：全开时为圆形，光圈叶片形成六边形，变形宽银幕镜头为椭圆，或边缘处呈猫眼形")
             }
         }
     }
@@ -638,15 +619,9 @@ struct GradientMapControls: View {
     private func color(_ value: AdjustmentColor) -> Color { Color(.sRGB, red: value.red, green: value.green, blue: value.blue) }
 
     private func swatch(_ title: String, _ value: AdjustmentColor, action: @escaping () -> Void) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return HStack(spacing: 8) {
             Button(action: action) {
-                shape
-                    .fill(color(value))
-                    .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1.5) }
-                    .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                    .frame(width: 24, height: 24)
-                    .contentShape(shape)
+                ColorSwatch(color: color(value))
             }
             .buttonStyle(.plain)
             .help("选取\(title)颜色")
@@ -659,4 +634,29 @@ struct GradientMapControls: View {
 private struct LabelWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+// Chinese display names for the pickers; the raw values stay English because both enums are Codable
+// and stored in project files.
+private extension LensEffect {
+    var displayName: String {
+        switch self {
+        case .anamorphicFlare: return "变形光斑"
+        case .starburst: return "星芒"
+        case .mist: return "薄雾"
+        case .prism: return "棱镜"
+        case .bokeh: return "焦外光斑"
+        }
+    }
+}
+
+private extension BokehShape {
+    var displayName: String {
+        switch self {
+        case .round: return "圆形"
+        case .hexagon: return "六边形"
+        case .oval: return "椭圆形"
+        case .catsEye: return "猫眼形"
+        }
+    }
 }

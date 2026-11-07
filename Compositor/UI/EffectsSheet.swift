@@ -15,12 +15,13 @@ struct EffectsSheet: View {
             case .outerGlow: outerGlow
             case .innerGlow: innerGlow
             }
-            HStack(spacing: 10) {
-                Spacer()
+            Divider()
+            HStack {
                 Button("取消") { session.finishEffectsEditing(commit: false) }
                     .configuredNativeShortcut(.escape)
+                Spacer()
                 Button("确定") { session.finishEffectsEditing(commit: true) }
-                    .configuredNativeShortcut(.return)
+                    .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
             }
         }
         .padding(20).frame(width: 340).fixedSize()
@@ -33,27 +34,25 @@ struct EffectsSheet: View {
         HStack {
             Text("描边").font(.headline)
             Spacer()
-            if let effect {
-                Picker("位置", selection: Binding(get: { effect.inside }, set: { inside in
-                    session.changeEffects { $0.stroke?.inside = inside }
-                })) {
-                    Text("外部").tag(false)
-                    Text("内部").tag(true)
-                }.pickerStyle(.segmented).labelsHidden().fixedSize()
-            }
+            if effect != nil { swatch(.stroke) }
         }
         if let effect {
-            HStack {
-                Text("颜色").frame(width: 64, alignment: .leading)
-                swatch(.stroke)
-                Spacer()
-            }
             slider("大小", value: Binding(get: { effect.size }, set: { size in
                 session.changeEffects { $0.stroke?.size = size }
             }), range: 0...20, inputRange: 0...StrokeEffect.maxSize, unit: "px")
             slider("不透明度", value: Binding(get: { CGFloat(effect.opacity * 100) }, set: { value in
                 session.changeEffects { $0.stroke?.opacity = Double(value) / 100 }
             }), range: 0...100, unit: "%")
+            HStack(spacing: 10) {
+                Text("位置").frame(width: 64, alignment: .leading)
+                Picker("位置", selection: Binding(get: { effect.inside }, set: { inside in
+                    session.changeEffects { $0.stroke?.inside = inside }
+                })) {
+                    Text("外部").tag(false)
+                    Text("内部").tag(true)
+                }.pickerStyle(.segmented).labelsHidden().fixedSize()
+                Spacer()
+            }
         }
     }
 
@@ -154,13 +153,8 @@ struct EffectsSheet: View {
     /// The effect's color, opened in the app's own picker.
     private func swatch(_ kind: LayerEffectKind) -> some View {
         let color = session.editingEffects.color(kind)
-        let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
         return Button { session.openEffectColorPicker(kind) } label: {
-            shape.fill(Color(red: Double(color?.red ?? 0), green: Double(color?.green ?? 0), blue: Double(color?.blue ?? 0)))
-                .overlay { shape.inset(by: 1).strokeBorder(.white, lineWidth: 1) }
-                .overlay { shape.strokeBorder(.black, lineWidth: 1) }
-                .frame(width: 36, height: 18)
-                .contentShape(shape)
+            ColorSwatch(color: Color(red: Double(color?.red ?? 0), green: Double(color?.green ?? 0), blue: Double(color?.blue ?? 0)))
         }
         .buttonStyle(.plain)
         .help("选择效果颜色")
@@ -180,14 +174,15 @@ struct EffectsSheet: View {
             // A manually entered larger value stays intact; only the thumb is pinned
             // to the end of the slider until the user drags it again.
             Slider(value: Binding(get: { min(range.upperBound, max(range.lowerBound, value.wrappedValue)) },
-                                  set: { value.wrappedValue = $0 }), in: range).frame(width: 130)
+                                  set: { value.wrappedValue = $0 }), in: range)
             TextField(title, value: Binding(get: { Double(value.wrappedValue) },
                                             set: setAmount),
                       format: .number.precision(.fractionLength(0)))
                 .frame(width: 48).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
                 .arrowSteps(value: { Double(value.wrappedValue) },
                             change: setAmount)
-                .unitSuffix(unit)
+            // A column the same width for every unit, so all the sliders end together and the units meet OK's edge.
+            Text(unit).frame(width: 16, alignment: .trailing).padding(.leading, -8)
         }
     }
 }
