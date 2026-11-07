@@ -56,7 +56,6 @@ struct LassoControls: View {
                 modifyControls
                 }
             }
-            }
             .scrollIndicators(.never)
             Spacer(minLength: 0)
             if let selection = session.selection {
