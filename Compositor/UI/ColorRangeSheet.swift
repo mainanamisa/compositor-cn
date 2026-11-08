@@ -26,7 +26,7 @@ struct ColorRangeSheet: View {
             HStack(spacing: 10) {
                 Text("颜色容差").fixedSize()
                     .scrubbable(sensitivity: 1, value: fuzziness, range: ColorRangeEdit.fuzzinessRange)
-                Slider(value: fuzziness, in: ColorRangeEdit.fuzzinessRange)
+                AppSlider(value: fuzziness, in: ColorRangeEdit.fuzzinessRange)
                 TextField("颜色容差", value: fuzziness, format: .number.precision(.fractionLength(0)))
                     .frame(width: 48).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
             }

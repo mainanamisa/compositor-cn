@@ -3,18 +3,18 @@
   <channel>
     <title>Compositor</title>
     <item>
-      <title>Version 1.6.3</title>
-      <pubDate>Tue, 03 Nov 2026 21:30:23 +0000</pubDate>
-      <sparkle:version>62</sparkle:version>
-      <sparkle:shortVersionString>1.6.3</sparkle:shortVersionString>
+      <title>Version 1.6.5</title>
+      <pubDate>Sat, 07 Nov 2026 17:41:33 +0000</pubDate>
+      <sparkle:version>64</sparkle:version>
+      <sparkle:shortVersionString>1.6.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <link>https://github.com/robbietilton/Compositor/releases/tag/v1.6.3</link>
-      <changes><![CDATA[Shapes, lines, marquee selections and resized layers show their size beside the pointer as you drag
-New View › Show › Distances shows pixel gaps to the canvas edges and nearby layers while moving a layer, and to the layer under the pointer with ⌘ held
-Deselect (⌘D) works after clicking the same area twice with the Magic Wand
-Volumetric Light's color picker samples from the canvas instead of moving the light
-The "Automatically download and install updates" checkbox in the update alert can be checked again]]></changes>
-      <enclosure url="https://github.com/robbietilton/Compositor/releases/download/v1.6.3/Compositor.dmg" sparkle:edSignature="bvLTU0w/PWiIOX9//afs4tDNe8unRuom0NNPlGvZY6dtZRANYDqnWJU1G7/HaJq4ba682Sp1gNNIL4JIZmI2Bw==" length="8827062" type="application/octet-stream"/>
+      <link>https://github.com/robbietilton/Compositor/releases/tag/v1.6.5</link>
+      <changes><![CDATA[Redesigned sliders throughout the app, with a slim track and a narrow knob that turns to glass while you drag
+A refreshed Color Picker that's more compact, with a new and current color comparison
+UI polish across panels and tool bars
+Fixed stroke layer effects being uneven or clipped on rounded shapes
+Fixed painting past the edges of a scaled-down layer, which could fail with a GPU error]]></changes>
+      <enclosure url="https://github.com/robbietilton/Compositor/releases/download/v1.6.5/Compositor.dmg" sparkle:edSignature="ObVLnm5VIXdjzBSBbimG13ENOKaNhPszHHDRZsdrAaVJAMX+ON/aTnBynNdfVCDW6W4+aJktvgigcQbWG8zOBQ==" length="8845829" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>

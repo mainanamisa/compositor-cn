@@ -206,6 +206,9 @@ final class EditorSession {
     var effectSelection: LayerEffectSelection?
     @ObservationIgnored var effectsPreviews = EffectsPreviewCache()
     var projectURL: URL?
+    /// The image file the document began as, opened or dropped into an empty window: until the document is saved as a
+    /// project, Export offers that file's name, folder and format, so editing a PNG and writing it back is quick.
+    @ObservationIgnored var sourceImageURL: URL?
     /// Blocks overlapping edits immediately. Not observed by the UI: controls only dim via
     /// `showsBusy`, after an operation has run long enough to be worth showing, so quick
     /// edits (invert, fills, stroke commits) never flash the interface.
@@ -298,6 +301,9 @@ final class EditorSession {
     @ObservationIgnored var brushPointer: CGPoint?
     /// The pen's latest pressure in this stroke; 1 for a mouse. Events that carry none (the release) keep it.
     @ObservationIgnored var brushPressure: CGFloat = 1
+    /// Every point the stroke in progress has been given, with its pressure, so it can be painted again from the start
+    /// (see `restartBrush`).
+    @ObservationIgnored var brushInput: [(point: CGPoint, pressure: CGFloat)] = []
     @ObservationIgnored var maskDistortPreviewCache: MaskDistortPreviewCache?
     /// The last rounded rectangle drawn for a transform in progress, by layer, with the size it was drawn at.
     @ObservationIgnored var shapeTransformPreviewCache: [UUID: (size: CGSize, image: CGImage)] = [:]
@@ -1026,8 +1032,9 @@ final class EditorSession {
             let startsDocument = document == nil
             var psdProfile: CMYKProfile?
             defer {
-                if startsDocument, document != nil, let profile = psdProfile ?? CMYK.profile(ofImageAt: url) {
-                    proofProfile = CMYK.adopt(profile)
+                if startsDocument, document != nil {
+                    if projectURL == nil { sourceImageURL = url }
+                    if let profile = psdProfile ?? CMYK.profile(ofImageAt: url) { proofProfile = CMYK.adopt(profile) }
                 }
             }
             do {

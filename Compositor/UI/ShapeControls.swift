@@ -27,7 +27,7 @@ struct ShapeControls: View {
                 HStack(spacing: 6) {
                     Text("宽度").scrubbable(sensitivity: 1, value: $session.shapeLineWidth, range: 1...5000)
                     // The slider covers everyday widths; typing or scrubbing reaches up to 5000.
-                    Slider(value: Binding(get: { min(50, session.shapeLineWidth) },
+                    AppSlider(value: Binding(get: { min(50, session.shapeLineWidth) },
                                           set: { session.shapeLineWidth = $0.rounded() }), in: 1...50)
                         .frame(width: 100)
                     TextField("宽度", value: Binding(get: { session.shapeLineWidth },
@@ -61,7 +61,7 @@ struct ShapeControls: View {
             if session.shapeKind == .rectangle {
                 HStack(spacing: 6) {
                     Text("圆角").scrubbable(sensitivity: 1, value: $session.shapeCornerRadius, range: 0...5000)
-                    Slider(value: Binding(get: { min(200, session.shapeCornerRadius) },
+                    AppSlider(value: Binding(get: { min(200, session.shapeCornerRadius) },
                                           set: { session.shapeCornerRadius = $0.rounded() }), in: 0...200)
                         .frame(width: 100)
                     TextField("圆角", value: Binding(get: { session.shapeCornerRadius },
