@@ -14,7 +14,7 @@ import Testing
         // Once saved as a project, its name leads.
         let project = URL(fileURLWithPath: "/Users/someone/Projects/Poster.comp")
         #expect(ProjectController.exportName(projectURL: project, source: png, format: .png) == "Poster.png")
-        #expect(ProjectController.exportName(projectURL: nil, source: nil, format: .png) == "Untitled.png")
+        #expect(ProjectController.exportName(projectURL: nil, source: nil, format: .png) == "未命名.png")
     }
 
     @Test func openingAnImageIntoAnEmptyWindowRemembersIt() async throws {
