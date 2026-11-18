@@ -165,13 +165,23 @@ final class EditorSession {
     @ObservationIgnored private var gifFrameSelectionRequestID: UUID?
 
     /// Frame navigation stays in runtime state; pixel edits are immutable assets stored on the animation.
+    /// A shape color being chosen is drawn in place of the committed pixels and is not part of the saved document.
     func displayedAsset(for layer: ImageLayer) -> ImportedImage? {
+        let saved = savedAsset(for: layer)
+        if let preview = shapeColorPreview, preview.layerID == layer.id, let saved {
+            return ImportedImage(image: preview.image, thumbnail: saved.thumbnail, name: saved.name)
+        }
+        return saved
+    }
+
+    /// The asset a save writes: the committed layer, or a GIF frame, never a shape-color preview.
+    func savedAsset(for layer: ImageLayer) -> ImportedImage? {
         guard let timeline = gifTimeline(for: layer) else { return layer.asset }
         return layer.gifAnimation?.framePixels[timeline.selectedFrameIndex] ?? timeline.displayedAsset ?? layer.asset
     }
 
     func displayedLayer(for layer: ImageLayer) -> ImageLayer {
-        guard gifTimeline(for: layer) != nil, let asset = displayedAsset(for: layer) else { return layer }
+        guard let asset = displayedAsset(for: layer), asset.image !== layer.asset?.image else { return layer }
         var displayed = layer
         displayed.asset = asset
         return displayed
@@ -209,6 +219,19 @@ final class EditorSession {
     /// The image file the document began as, opened or dropped into an empty window: until the document is saved as a
     /// project, Export offers that file's name, folder and format, so editing a PNG and writing it back is quick.
     @ObservationIgnored var sourceImageURL: URL?
+    /// Where the Layers panel is in its window (top-left origin): a layer dragged in the list stays in the list until
+    /// the pointer leaves the panel.
+    @ObservationIgnored var layersPanelFrame: CGRect = .zero
+    /// Where the panel's blend and opacity controls are, likewise: a row dragged up over them stays the list's, and
+    /// above them it leaves the list.
+    @ObservationIgnored var layerControlsFrame: CGRect = .zero
+    /// A layer drag is under way that may leave the list for the system's drag (above the panel's controls, or out of
+    /// the panel): set as the row is picked up, so the controls are ready to take it back for the list if it returns
+    /// over them (`LayerDropForwarder`), and cleared as it ends.
+    var layerDragIsOutside = false
+    /// The list, and the dragged row as it draws it, for `LayerDropForwarder`.
+    @ObservationIgnored weak var layerList: NSTableView?
+    @ObservationIgnored var layerDragImage: NSImage?
     /// Blocks overlapping edits immediately. Not observed by the UI: controls only dim via
     /// `showsBusy`, after an operation has run long enough to be worth showing, so quick
     /// edits (invert, fills, stroke commits) never flash the interface.
@@ -285,7 +308,7 @@ final class EditorSession {
     @ObservationIgnored var snapGuides: (xs: [CGFloat], ys: [CGFloat]) = ([], [])
     /// Pixel gaps the Move tool shows while a layer is dragged, or with Command held over another layer.
     @ObservationIgnored var distanceLines: [DistanceLine] = []
-    /// A Move tool resize in progress: the layer's size, and where the pointer has the handle, in document pixels.
+    /// A Move tool resize or rotation in progress: the layer's size or angle, and where the pointer is, in document pixels.
     @ObservationIgnored var resizeSize: (text: String, corner: CGPoint)?
     /// Crop, resize and selection moves follow View › Snap (⇧⌘;) too: they had a Snap item of their own, which left
     /// the View menu with two called Snap.
@@ -358,6 +381,13 @@ final class EditorSession {
     /// A Line shape's dash pattern and the finish on its ends (and on each dash).
     var shapeLineStyle = ShapeLineStyle.solid
     var shapeLineCap = ShapeLineCap.square
+    /// The next rectangle or ellipse's inside stroke. 0 draws none, which is how every shape started.
+    var shapeStrokeWidth: Double = 0
+    var shapeStrokeColor = PaletteColor.black
+    /// The layer whose stroke or radius a drag is changing, so the drag is one undo step.
+    var shapeStyleEditLayerID: UUID?
+    /// The preview drawn while a shape's fill or stroke color is being chosen. Not part of the document or its history.
+    var shapeColorPreview: (layerID: UUID, image: CGImage)?
     /// The shape being dragged out with the Shape tool, before it becomes a layer.
     var shapeDraft: ShapeDraft?
     var selectionModeChoice = SelectionMode.replace
@@ -522,6 +552,7 @@ final class EditorSession {
         if id != activeLayerID { commitTransform(); resolveGradient() }
         activeLayerID = id
         revealActiveLayer()
+        if tool == .shape { adoptShapeKindFromSelection() }
     }
     func selectTool(_ value: NavigationTool) {
         if tool != value, !finishText() { return }
@@ -537,6 +568,7 @@ final class EditorSession {
             brushSettings = settings
         }
         tool = value
+        if value == .shape { adoptShapeKindFromSelection() }
         if value.isBrushTool { _ = MetalBrushCoverage.shared }
         if value == .crop, cropRect == nil, let document {
             cropRatioChoice = "Free"
@@ -698,6 +730,14 @@ final class EditorSession {
         if let group = edit.group { return group.originals[layer.id].map { $0.following(from: group.box, to: edit.draft) } }
         return edit.layerID == layer.id ? edit.draft : nil
     }
+    /// Option-arrow with the Move tool: a copy of the selected layers, moved by the arrow's step, as an Option-drag
+    /// makes, in one undo step.
+    func duplicateAndNudgeLayer(dx: CGFloat, dy: CGFloat) {
+        beginDuplicateTransform()
+        guard transformDuplicate != nil else { return }
+        nudgeLayer(dx: dx, dy: dy)
+        commitTransform()
+    }
     func nudgeLayer(dx: CGFloat, dy: CGFloat) {
         let alreadyEditing = transformEdit != nil
         if !alreadyEditing { beginTransform(persistent: false) }
@@ -794,6 +834,8 @@ final class EditorSession {
     var canRedo: Bool { canUseHistory && history.canRedo }
 
     func undo() {
+        // A shape color that was only being previewed is not an edit, so it gets out of the way first.
+        cancelShapeColorPreview()
         // Like Photoshop, the first Undo discards a pending gradient.
         if gradientEdit != nil { cancelGradient(); return }
         guard canUndo, let snapshot = history.undo() else { return }
@@ -801,6 +843,7 @@ final class EditorSession {
     }
 
     func redo() {
+        cancelShapeColorPreview()
         guard canRedo, let snapshot = history.redo() else { return }
         restore(snapshot)
     }
@@ -873,9 +916,13 @@ final class EditorSession {
             }
             if let topmost = document.layers.lastIndex(where: { isInside($0.id) }) { insertion = max(insertion, topmost + 1) }
         }
+        var layers = document.layers
+        layers.insert(layer, at: insertion)
+        // Added in the middle of a clipping group, it joins the group.
+        Self.adoptClipping(layer.id, in: &layers)
         beginEdit("新建空白图层")
         defer { endEdit() }
-        self.document?.layers.insert(layer, at: insertion)
+        self.document?.layers = layers
         activeLayerID = layer.id
     }
 
@@ -1210,7 +1257,7 @@ final class EditorSession {
             refreshCanvasPreview?()
         } catch {
             guard gifFrameSelectionRequestID == requestID else { return }
-            importError = "Couldn’t read GIF frame \(index + 1): \(error.localizedDescription)"
+            importError = "无法读取 GIF 第 \(index + 1) 帧：\(error.localizedDescription)"
         }
     }
 
