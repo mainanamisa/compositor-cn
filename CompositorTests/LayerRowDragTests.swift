@@ -110,7 +110,7 @@ import Testing
             rig.table.beginsOutsideDrag = { _, _, _, _, _ in }
             try #require(rig.table.numberOfRows == 4, "the list shows every layer before the drag")
             let rows = rig.session.filteredLayerRows.map(\.layer)
-            #expect(rows.map(\.name) == ["Layer 4", "Layer 3", "Layer 2", "Layer 1"])
+            #expect(rows.map(\.name) == ["图层 4", "图层 3", "图层 2", "图层 1"])
             let base = rows[2].id
             #expect(rows[1].maskSourceID == base)
             let dragged = rows[3].id
@@ -122,7 +122,7 @@ import Testing
             NSApp.postEvent(try mouse(.leftMouseDragged, point, in: rig.window), atStart: false)
             NSApp.postEvent(try mouse(.leftMouseUp, point, in: rig.window), atStart: false)
             rig.table.mouseDown(with: try mouse(.leftMouseDown, start, in: rig.window))
-            #expect(names(rig.session) == ["Layer 4", "Layer 1", "Layer 3", "Layer 2"])
+            #expect(names(rig.session) == ["图层 4", "图层 1", "图层 3", "图层 2"])
             let landed = rig.session.document?.layers.first { $0.id == dragged }
             #expect(landed?.maskSourceID == (clipped ? base : nil), "at \(fraction) of the gap")
         }

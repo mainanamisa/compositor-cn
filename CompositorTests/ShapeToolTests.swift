@@ -332,7 +332,7 @@ struct ShapeToolTests {
         session.setDisplayedStrokeWidth(8)
         session.finishShapeStyleEdit()
         #expect(session.history.undoCount == count + 1)
-        #expect(session.history.undoName == "Shape Style")
+        #expect(session.history.undoName == "形状样式")
         #expect(session.foregroundColor == foreground)
         #expect(session.shapeStrokeWidth == 0, "the next shape's stroke is unchanged")
         let style = try #require(session.activeLayer?.liveShape?.style)
