@@ -63,17 +63,17 @@ nonisolated enum NewCanvasBackground: String, CaseIterable, Sendable {
 
 struct NewCanvasSheet: View {
     let session: EditorSession
-    var onCreate: ((Int, Int, Double, CGColor?) -> Void)? = nil
     var onOpen: (() -> Void)? = nil
     var onOpenRecent: ((URL) -> Void)? = nil
+    @AppStorage("newCanvas.width") private var lastWidth = 1920
+    @AppStorage("newCanvas.height") private var lastHeight = 1080
     @State private var width = "1920"
     @State private var height = "1080"
-    /// Always starting from the common case: remembered print settings turned the default 1920 × 1080 into inches,
-    /// a canvas far too big to make.
+    /// Remember dimensions in pixels, even when the last canvas was entered in print units.
     @State private var unit = NewCanvasUnit.pixels
     @State private var resolution = 72.0
     @State private var background = NewCanvasBackground.transparent
-    @State private var suggestedClipboardSize = false
+    @State private var initializedSize = false
     @FocusState private var focusedField: Field?
     private enum Field { case width, height }
     private var pixelWidth: Int? { unit.pixels(width, resolution: resolution) }
@@ -166,9 +166,10 @@ struct NewCanvasSheet: View {
                 Button("导入图像") { session.showsImporter = true }.buttonStyle(.bordered)
                 Spacer()
                 Button("创建画布") {
-                    guard let w = pixelWidth, let h = pixelHeight else { return }
-                    if let onCreate { onCreate(w, h, resolution, background.color) }
-                    else { session.createDocument(width: w, height: h, emptyLayer: true, resolution: resolution, background: background.color) }
+                    guard let w = pixelWidth, let h = pixelHeight,
+                          session.createNewProject(width: w, height: h, resolution: resolution, background: background.color) else { return }
+                    lastWidth = w
+                    lastHeight = h
                 }
                 .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
                 .disabled(!valid).accessibilityIdentifier("createCanvas")
@@ -189,8 +190,9 @@ struct NewCanvasSheet: View {
         .disabled(session.isImporting || session.showsBusy)
         .onAppear {
             Task { await ReleaseReminder.shared.checkIfDue() }
-            if !suggestedClipboardSize {
-                suggestedClipboardSize = true
+            if !initializedSize {
+                initializedSize = true
+                setPixels(lastWidth, lastHeight)
                 if session.skipsInitialClipboardCanvasSize {
                     session.skipsInitialClipboardCanvasSize = false
                 } else if let size = Self.clipboardDimensions() {

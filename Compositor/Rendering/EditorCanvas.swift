@@ -221,7 +221,32 @@ final class CanvasView: NSView {
     }
     /// Photoshop's duplicate pointer: a black arrow over a white one offset behind it. Shown where a
     /// drag copies — Option-dragging a layer, Cmd-Option-dragging selected pixels.
-    static let duplicateCursor = arrowCursor([(offset: 5, fill: .white, outline: .black), (offset: 0, fill: .black, outline: .white)])
+    /// Option-dragging a layer copies it: Photoshop's pointer for that, a black arrowhead with a white one behind it to the
+    /// right, neither with a stem, so the two stay apart at cursor size. The black one's tip is the click point.
+    static let duplicateCursor: NSCursor = {
+        // Room round the tip for the outline and shadow, as the other arrows have.
+        let margin: CGFloat = 4
+        func head(_ dx: CGFloat, _ dy: CGFloat) -> NSBezierPath {
+            let path = NSBezierPath()
+            // Drawn a point above the hot spot, so it sits where the system arrow and the Move and transform
+            // pointers do: switching to it with Option, nothing seems to jump.
+            let top = margin - 1
+            path.move(to: NSPoint(x: margin + dx, y: top + dy))
+            path.line(to: NSPoint(x: margin + dx, y: top + dy + 13))
+            path.line(to: NSPoint(x: margin + dx + 3.8, y: top + dy + 10))
+            path.line(to: NSPoint(x: margin + dx + 9.5, y: top + dy + 10))
+            path.close()
+            path.lineJoinStyle = .round
+            return path
+        }
+        // Outlined and shadowed as the app's other pointers are: each line width is twice the outline that shows.
+        let copy = head(7.5, 3.5)
+        copy.lineWidth = 1.1
+        let pointer = head(0, 0)
+        pointer.lineWidth = 2.2
+        return outlinedCursor(size: NSSize(width: 28, height: 28), hotSpot: NSPoint(x: margin, y: margin),
+                              [(copy, .white, .black), (pointer, .black, .white)])
+    }()
     /// A white arrow over a transform handle that distorts when dragged (Cmd held, or already distorted).
     static let distortCursor = arrowCursor([(offset: 0, fill: .white, outline: .black)])
     /// Photoshop's Move pointer: the arrow with a small four-way arrow at its lower right. Shown wherever
@@ -434,23 +459,63 @@ final class CanvasView: NSView {
     private var displayedCropRect: CGRect?
     private var displayedTransformGeometry: TransformOverlayGeometry?
     private var hoverTrackingArea: NSTrackingArea?
-    private static let rotationCursor: NSCursor = {
-        let symbol = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "旋转")!
-        let white = symbol.withSymbolConfiguration(.init(paletteColors: [.white]))!
-        let black = symbol.withSymbolConfiguration(.init(paletteColors: [.black]))!
-        let image = NSImage(size: NSSize(width: 24, height: 24), flipped: false) { _ in
-            let glyph = CGRect(x: 2, y: 2, width: 20, height: 20)
-            // Expand the white silhouette, then draw the black symbol on top.
-            for step in 0..<16 {
-                let angle = CGFloat(step) * .pi / 8
-                white.draw(in: glyph.offsetBy(dx: cos(angle) * 1.25, dy: sin(angle) * 1.25))
+    /// The rotate pointer: a curved double arrow wrapped around the corner it's beside, turned to face out from the
+    /// box through that corner (`angle`, y up), in sixteen steps, made once each.
+    private static var rotationCursors: [Int: NSCursor] = [:]
+    static func rotationCursor(angle: CGFloat) -> NSCursor {
+        let steps = 16
+        let step = ((Int((angle / (2 * .pi) * CGFloat(steps)).rounded()) % steps) + steps) % steps
+        if let cursor = rotationCursors[step] { return cursor }
+        let turn = CGFloat(step) / CGFloat(steps) * 2 * .pi
+        let size: CGFloat = 28
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.translateBy(x: size / 2, y: size / 2)
+            context.rotate(by: turn)
+            // Facing right: a gentle arc bulging outward around a center behind it, and at each end a solid head
+            // pointing on along the arc, so the curve and its arrows read apart even this small.
+            // Three quarters of its first size, so it sits level with the corner resize arrows; the lines keep their weight.
+            let scale: CGFloat = 0.75
+            let radius: CGFloat = 10.5 * scale, center = CGPoint(x: -6.5 * scale, y: 0), sweep: CGFloat = .pi / 4.4
+            let arc = CGMutablePath()
+            arc.addArc(center: center, radius: radius, startAngle: -sweep, endAngle: sweep, clockwise: false)
+            let heads = CGMutablePath()
+            for end in [-sweep, sweep] {
+                let base = CGPoint(x: center.x + cos(end) * radius, y: center.y + sin(end) * radius)
+                // The way the arc runs at this end, away from its middle.
+                let sign: CGFloat = end > 0 ? 1 : -1
+                let along = CGVector(dx: -sin(end) * sign, dy: cos(end) * sign)
+                let side = CGVector(dx: -along.dy, dy: along.dx)
+                heads.move(to: CGPoint(x: base.x + along.dx * 5.5 * scale, y: base.y + along.dy * 5.5 * scale))
+                heads.addLine(to: CGPoint(x: base.x + side.dx * 3.6 * scale, y: base.y + side.dy * 3.6 * scale))
+                heads.addLine(to: CGPoint(x: base.x - side.dx * 3.6 * scale, y: base.y - side.dy * 3.6 * scale))
+                heads.closeSubpath()
             }
-            black.draw(in: glyph)
+            // A white outline first, so it shows on dark and light alike, then the black arrow over it.
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.setStrokeColor(NSColor.white.cgColor)
+            context.setFillColor(NSColor.white.cgColor)
+            context.setLineWidth(4.2)
+            context.addPath(arc)
+            context.strokePath()
+            context.setLineWidth(2.6)
+            context.addPath(heads)
+            context.drawPath(using: .fillStroke)
+            context.setStrokeColor(NSColor.black.cgColor)
+            context.setFillColor(NSColor.black.cgColor)
+            context.setLineWidth(1.5)
+            context.addPath(arc)
+            context.strokePath()
+            context.addPath(heads)
+            context.fillPath()
             return true
         }
-        return NSCursor(image: image, hotSpot: NSPoint(x: 12, y: 12))
-    }()
-    private static let eyedropperCursor = makeEyedropperCursor(badge: nil)
+        let cursor = NSCursor(image: image, hotSpot: NSPoint(x: size / 2, y: size / 2))
+        rotationCursors[step] = cursor
+        return cursor
+    }
+    static let eyedropperCursor = makeEyedropperCursor(badge: nil)
     /// Color Range's eyedroppers while Shift (add) or Option (take away) is held, or its + or − one is chosen.
     private static let eyedropperAddCursor = makeEyedropperCursor(badge: "plus")
     private static let eyedropperRemoveCursor = makeEyedropperCursor(badge: "minus")
@@ -1189,9 +1254,18 @@ final class CanvasView: NSView {
         }
         // The shape being dragged out previews where its layer will go — above the active layer — rather than over
         // everything, so the layers above it cover it as they will once it is made.
+        // Over the top of a clipping stack, the new layer won't be clipped, so the shape previews above the whole stack,
+        // unclipped, rather than clipped and then showing in full on release.
+        let renderIDs = document.renderLayers.map(\.id)
+        let stackTop: (base: UUID, top: UUID)? = {
+            guard let active = session.activeLayer, let base = active.maskSourceID,
+                  let index = renderIDs.firstIndex(of: active.id) else { return nil }
+            let next = renderIDs.indices.contains(index + 1) ? byID[renderIDs[index + 1]] : nil
+            return next?.maskSourceID == base && next?.parentID == active.parentID ? nil : (base, active.id)
+        }()
         func drawOwnWithDraft(_ id: UUID, _ context: CGContext) {
             drawOwn(id, context)
-            guard id == session.activeLayerID else { return }
+            guard id == session.activeLayerID, stackTop?.top != id else { return }
             drawShapeDraft(scale: scale, center: center, in: context)
             drawNewText(context)
         }
@@ -1239,7 +1313,13 @@ final class CanvasView: NSView {
             let clip = FolderMaskClip(image: displayImage(mask.asset.image, width: transform.size.width * scale, in: context), transform: transform)
             let origin = center(transform.center)
             return { clip.apply(scale: scale, center: origin, in: $0) }
-        }, in: context) { live.drawComposite($0, in: context) }
+        }, in: context) { id in
+            live.drawComposite(id, in: context)
+            if let stackTop, id == stackTop.base {
+                drawShapeDraft(scale: scale, center: center, in: context)
+                drawNewText(context)
+            }
+        }
         drawNewText(context)
     }
 
@@ -1285,17 +1365,20 @@ final class CanvasView: NSView {
         let rect = CGRect(x: middle.x - draft.rect.width * scale / 2, y: middle.y - draft.rect.height * scale / 2,
                           width: draft.rect.width * scale, height: draft.rect.height * scale)
         context.saveGState()
-        context.setFillColor(session.foregroundColor.nsColor.cgColor)
+        context.setFillColor(draft.fill.nsColor.cgColor)
         if draft.kind == .line {
             guard let ends = session.shapeLineEnds else { context.restoreGState(); return }
-            let thickness = max(1, CGFloat(session.shapeLineWidth) * scale)
-            context.setStrokeColor(session.foregroundColor.nsColor.cgColor)
+            let thickness = max(1, draft.lineWidth * scale)
+            context.setStrokeColor(draft.fill.nsColor.cgColor)
             // Exactly the two points being dragged between, so the start never shifts.
             context.strokeShapeLine(from: center(ends.start), to: center(ends.end), width: thickness,
                                     style: draft.lineStyle, cap: draft.lineCap)
         } else {
-            context.addPath(draft.kind.path(in: rect, cornerRadius: draft.cornerRadius * scale, smoothing: draft.smoothing))
-            context.fillPath()
+            // The same inside stroke the finished shape gets, so it shows while the box is still being dragged rather
+            // than only once the mouse is released.
+            let path = draft.kind.path(in: rect, cornerRadius: draft.cornerRadius * scale, smoothing: draft.smoothing)
+            EditorSession.fillShape(path, color: draft.fill.nsColor.cgColor, stroke: draft.strokeColor.nsColor.cgColor,
+                                    strokeWidth: min(draft.strokeWidth * scale, min(rect.width, rect.height) / 2), in: context)
         }
         context.restoreGState()
     }
@@ -1719,7 +1802,7 @@ final class CanvasView: NSView {
                 // Distorting (Cmd held, or already distorted) moves corners freely: the white arrow says so.
                 let distorting = session.transformEdit?.corners != nil || flags.contains(.command)
                 return distorting ? Self.distortCursor : geometry.resizeCursor(for: index)
-            case .rotate: return Self.rotationCursor
+            case .rotate: return Self.rotationCursor(angle: geometry.rotationAngle(at: point))
             case .move: return duplicate ? Self.duplicateCursor : Self.moveCursor
             case .distort: return Self.distortCursor
             }
@@ -2125,6 +2208,11 @@ final class CanvasView: NSView {
                 if case .resize = drag.mode {
                     session.resizeSize = ("\(Int(abs(draft.size.width).rounded())) × \(Int(abs(draft.size.height).rounded())) px", pixel)
                 }
+                // The angle beside the pointer as it turns, as the size is beside it as it scales: −180° to 180°.
+                if case .rotate = drag.mode {
+                    let degrees = Int(draft.rotation.rounded())
+                    session.resizeSize = ("\(((degrees + 180) % 360 + 360) % 360 - 180)°", pixel)
+                }
                 session.previewTransform(draft)
             }
             synchronizeDisplay()
@@ -2383,10 +2471,13 @@ final class CanvasView: NSView {
             session.nudgeSelection(dx: event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0,
                                    dy: event.keyCode == 126 ? -step : event.keyCode == 125 ? step : 0)
         } else if session.tool == .move, [123, 124, 125, 126].contains(event.keyCode),
-                  event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+                  event.modifierFlags.intersection([.command, .control]).isEmpty {
+            // Shift for 10 px; Option moves a copy, leaving the layer where it was.
             let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
-            session.nudgeLayer(dx: event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0,
-                               dy: event.keyCode == 126 ? -step : event.keyCode == 125 ? step : 0)
+            let dx: CGFloat = event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0
+            let dy: CGFloat = event.keyCode == 126 ? -step : event.keyCode == 125 ? step : 0
+            if event.modifierFlags.contains(.option) { session.duplicateAndNudgeLayer(dx: dx, dy: dy) }
+            else { session.nudgeLayer(dx: dx, dy: dy) }
         } else if (event.keyCode == 51 || event.keyCode == 117),
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             session.deleteKeyPressed()
@@ -2775,7 +2866,7 @@ final class CanvasView: NSView {
         transformDrag = TransformDrag(original: transform, start: pixel, mode: mode, originalCorners: session.transformEdit?.corners)
         switch mode {
         case .resize(let index): dragCursor = transformOverlay.geometry?.resizeCursor(for: index) ?? .arrow
-        case .rotate: dragCursor = Self.rotationCursor
+        case .rotate: dragCursor = transformOverlay.geometry.map { Self.rotationCursor(angle: $0.rotationAngle(at: point)) } ?? .arrow
         case .move: dragCursor = duplicatesTransformOnDrag ? Self.duplicateCursor : Self.moveCursor
         case .distort: dragCursor = Self.distortCursor
         }
@@ -2884,7 +2975,7 @@ extension CanvasView {
     /// The shape being dragged out, drawn by `drawShapeDraft` into a bitmap just big enough for it, in frame pixels.
     private func shapeDraftImage(placement: GPUPlacement) -> CIImage? {
         guard let draft = session.shapeDraft, let renderer = GPUCanvasRenderer.shared else { return nil }
-        let reach = CGFloat(session.shapeLineWidth) * placement.scale + 4
+        let reach = (draft.kind == .line ? draft.lineWidth * placement.scale : 0) + 4
         let box = draft.rect.applying(placement.mapping).insetBy(dx: -reach, dy: -reach).integral
         guard box.width >= 1, box.height >= 1, box.width * box.height <= DocumentLimits.maxSurfaceExtent,
               let context = try? BrushRaster.context(width: Int(box.width), height: Int(box.height), mask: false) else { return nil }
@@ -3480,11 +3571,13 @@ extension CanvasView {
                         prints.append("layer \(childID) \(session.displayedBlendMode(for: child))")
                         group = GPUBlend.blend(image, over: group, mode: session.displayedBlendMode(for: child))
                     } else if unsupported { return nil }
-                    group = drafts(after: childID, over: group)
+                    // Over the top of the stack, the new layer won't be clipped: it goes over the stack, below.
+                    if childID != children.last { group = drafts(after: childID, over: group) }
                 }
                 let stack = group.applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputBackgroundImageKey: CIImage.empty(),
                                                                                        kCIInputMaskImageKey: base])
                 result = GPUBlend.blend(clippedByFolders(id, stack), over: result, mode: mode)
+                if let top = children.last { result = drafts(after: top, over: result) }
                 continue
             }
             // A layer masked by another's coverage, outside a clipping stack.

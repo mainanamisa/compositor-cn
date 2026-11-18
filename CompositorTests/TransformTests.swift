@@ -29,6 +29,26 @@ struct TransformTests {
         #expect(session.activeLayerID == original.id)
         #expect(session.history.undoCount == count)
     }
+    /// Option-arrow with the Move tool: a copy, a step over, the original left in place, as one undo step.
+    @Test func optionArrowDuplicatesAndNudgesTheCopy() throws {
+        let session = EditorSession()
+        session.createDocument(width: 400, height: 200)
+        try insertPaintedLayer(into: session)
+        let original = try #require(session.activeLayer)
+        let count = session.history.undoCount
+        session.duplicateAndNudgeLayer(dx: 10, dy: 0)
+        session.duplicateAndNudgeLayer(dx: 0, dy: -1)
+        #expect(session.document?.layers.count == 3)
+        #expect(session.document?.layers.first { $0.id == original.id }?.transform == original.transform)
+        var expected = original.transform.origin
+        expected.x += 10; expected.y -= 1
+        #expect(session.activeLayer?.transform.origin == expected)
+        #expect(session.history.undoCount == count + 2)
+        session.undo()
+        session.undo()
+        #expect(session.document?.layers.count == 1)
+        #expect(session.activeLayerID == original.id)
+    }
     @Test func autoSelectCanBeDisabledAndCommandClickOverridesIt() throws {
         let session = EditorSession()
         session.createDocument(width: 400, height: 200)
@@ -123,9 +143,22 @@ struct TransformTests {
             if case .resize(let hit) = geometry.hit(geometry.handles[index]) { #expect(hit == index) }
             else { Issue.record("Corner was not recognized") }
         }
-        if case .rotate = geometry.hit(geometry.rotationHandle) {} else { Issue.record("Rotation handle was not recognized") }
+        // Just outside each corner rotates; farther out, nothing.
+        for index in [0, 2, 4, 6] {
+            if case .rotate = geometry.hit(outside(geometry, corner: index, by: 18)) {} else { Issue.record("No rotation past corner \(index)") }
+            #expect(geometry.hit(outside(geometry, corner: index, by: 40)) == nil)
+        }
         #expect(geometry.hit(viewport.viewPoint(from: transform.center, documentSize: size)) == nil)
     }
+    /// A point `distance` beyond a corner handle, straight out from the box's middle.
+    private func outside(_ geometry: TransformOverlayGeometry, corner: Int, by distance: CGFloat) -> CGPoint {
+        let corners = [0, 2, 4, 6].map { geometry.handles[$0] }
+        let middle = CGPoint(x: corners.map(\.x).reduce(0, +) / 4, y: corners.map(\.y).reduce(0, +) / 4)
+        let point = geometry.handles[corner]
+        let length = max(0.001, hypot(point.x - middle.x, point.y - middle.y))
+        return CGPoint(x: point.x + (point.x - middle.x) / length * distance, y: point.y + (point.y - middle.y) / length * distance)
+    }
+
     private func insertPaintedLayer(into session: EditorSession) throws {
         let size = try #require(session.document?.size)
         let context = try #require(CGContext(data: nil, width: Int(size.width), height: Int(size.height),
@@ -196,7 +229,7 @@ struct TransformTests {
         #expect(transform.contains(transform.center))
         #expect(transform.contains(CGPoint(x: 150, y: 265)))
         #expect(!transform.contains(CGPoint(x: 190, y: 225)))
-        if case .rotate? = geometry.hit(geometry.rotationHandle) {} else { Issue.record("Missing rotation handle hit") }
+        if case .rotate? = geometry.hit(outside(geometry, corner: 2, by: 18)) {} else { Issue.record("Missing rotation hit") }
         for index in geometry.handles.indices {
             if case .resize(let hit)? = geometry.hit(geometry.handles[index]) { #expect(hit == index) }
             else { Issue.record("Missing resize handle hit") }

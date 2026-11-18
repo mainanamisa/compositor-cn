@@ -3,15 +3,16 @@
   <channel>
     <title>Compositor</title>
     <item>
-      <title>Version 1.6.6</title>
-      <pubDate>Sun, 08 Nov 2026 01:27:10 +0000</pubDate>
-      <sparkle:version>65</sparkle:version>
-      <sparkle:shortVersionString>1.6.6</sparkle:shortVersionString>
+      <title>Version 1.6.11</title>
+      <pubDate>Tue, 17 Nov 2026 20:04:30 +0000</pubDate>
+      <sparkle:version>70</sparkle:version>
+      <sparkle:shortVersionString>1.6.11</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <link>https://github.com/robbietilton/Compositor/releases/tag/v1.6.6</link>
-      <changes><![CDATA[Opening a PNG or other image names the canvas after the file, and Export and Save start with its name and folder
-Export As remembers the format you last used and opens with ⌥⇧⌘S, Photoshop's familiar shortcut]]></changes>
-      <enclosure url="https://github.com/robbietilton/Compositor/releases/download/v1.6.6/Compositor.dmg" sparkle:edSignature="bdO+t+SenkeeembufneooQQ26xspE4Sg+jnYyiSaIAJ7TtZJiHJ4mGtv2f6yHJ7ipJISWW4sX4pogpXGHS3QDw==" length="8867874" type="application/octet-stream"/>
+      <link>https://github.com/robbietilton/Compositor/releases/tag/v1.6.11</link>
+      <changes><![CDATA[Pasting while a folder is selected now puts the layer above the folder, not inside it
+New layers added between clipped layers are clipped too
+When dragging a layer to the top of a group of clipped layers, drop it a little higher to leave it unclipped, or a little lower to clip it]]></changes>
+      <enclosure url="https://github.com/robbietilton/Compositor/releases/download/v1.6.11/Compositor.dmg" sparkle:edSignature="Xvg6TiK4kfX/V9/jTPsF6h5ak9sgpN4uTn8zEvupxpLxjkOXvnJx8rrryST0HrnSwp5/CKG7XQVGP/KWeGRzDw==" length="8882559" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
