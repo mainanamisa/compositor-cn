@@ -192,7 +192,7 @@ final class ProjectController {
     /// back out as a PNG, otherwise the format last used.
     static func startingFormat(source: URL?, projectURL: URL?) -> ExportFormat {
         guard projectURL == nil, let source, let type = UTType(filenameExtension: source.pathExtension) else { return lastExportFormat }
-        return [ExportFormat.png, .jpeg, .tiff, .gif, .exr].first { type.conforms(to: $0.type) } ?? lastExportFormat
+        return [ExportFormat.png, .jpeg, .tiff, .gif, .exr, .psd].first { type.conforms(to: $0.type) } ?? lastExportFormat
     }
 
     /// The name an export starts with: the project's, or the image the document began as, or Untitled.
@@ -533,6 +533,8 @@ enum ExportFormat: String, CaseIterable {
     case png = "PNG", jpeg = "JPEG", heic = "HEIC", webp = "WebP", tiff = "TIFF", pdf = "PDF", gif = "GIF", bmp = "BMP", exr = "EXR"
     /// Layers packed into a PNG's red, green, blue and alpha, for game textures (see `ChannelPack`).
     case channelPack = "Channel Pack"
+    /// The layers, for Photoshop and After Effects (see `PSDWriter`). Last, as an interchange format.
+    case psd = "PSD"
     var type: UTType {
         switch self {
         case .png, .channelPack: .png
@@ -544,16 +546,17 @@ enum ExportFormat: String, CaseIterable {
         case .bmp: .bmp
         case .pdf: .pdf
         case .exr: .openEXR
+        case .psd: .photoshopImage
         }
     }
     /// Lossy formats get the dialog's quality slider.
     var supportsQuality: Bool { [.jpeg, .heic, .webp].contains(self) }
     /// The rest flatten transparency onto the background color, JPEG-fashion.
     var supportsAlpha: Bool { [.png, .heic, .webp, .tiff, .pdf, .exr].contains(self) }
-    /// The formats this Mac can actually write, in picker order. PDF and EXR always are: they go through CGPDFContext
-    /// and the EXR writer. Probing replaces CGImageDestinationGetTypeIDs(), which the macOS 27 SDK removed from the
-    /// headers; a destination for an unsupported type fails to create.
+    /// The formats this Mac can actually write, in picker order. PDF, EXR and PSD always are: they go through
+    /// CGPDFContext, the EXR writer and PSDWriter. Probing replaces CGImageDestinationGetTypeIDs(), which the macOS 27
+    /// SDK removed from the headers; a destination for an unsupported type fails to create.
     static var available: [ExportFormat] {
-        allCases.filter { $0 == .pdf || $0 == .exr || CGImageDestinationCreateWithData(NSMutableData(), $0.type.identifier as CFString, 1, nil) != nil }
+        allCases.filter { $0 == .pdf || $0 == .exr || $0 == .psd || CGImageDestinationCreateWithData(NSMutableData(), $0.type.identifier as CFString, 1, nil) != nil }
     }
 }
