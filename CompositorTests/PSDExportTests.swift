@@ -62,9 +62,9 @@ struct PSDExportTests {
         let parsed = try PSDReader.read(written.data)
         #expect(parsed.width == 120 && parsed.height == 80)
         // Bottom to top; the adjustment layer is left out.
-        #expect(parsed.layers.map(\.name) == ["Sky", "Red", "Green", "Folder 1", "Hidden"])
+        #expect(parsed.layers.map(\.name) == ["Sky", "Red", "Green", "组 1", "Hidden"])
         let byName = Dictionary(uniqueKeysWithValues: parsed.layers.map { ($0.name, $0) })
-        let folder = try #require(byName["Folder 1"])
+        let folder = try #require(byName["组 1"])
         #expect(folder.isGroup && byName["Red"]?.parentID == folder.id && byName["Green"]?.parentID == folder.id)
         let red = try #require(byName["Red"])
         #expect(red.bounds == CGRect(x: 10, y: 20, width: 40, height: 30))
@@ -84,7 +84,7 @@ struct PSDExportTests {
         #expect(imported.layers.first { $0.name == "Green" }?.maskSourceID == importedRed.id)
         #expect(importedRed.mask != nil)
         #expect(imported.conversions.isEmpty, "\(imported.conversions.map(\.message))")
-        #expect(PSDWriter.summary(PSDWriter.notes(for: snapshot)) == "Adjustment layers left out: “Levels”")
+        #expect(PSDWriter.summary(PSDWriter.notes(for: snapshot)) == "调整图层将被省略：“Levels”")
     }
 
     @Test func otherAppsSeeTheFlattenedPicture() async throws {
