@@ -384,6 +384,9 @@ final class EditorSession {
     /// The next rectangle or ellipse's inside stroke. 0 draws none, which is how every shape started.
     var shapeStrokeWidth: Double = 0
     var shapeStrokeColor = PaletteColor.black
+    /// A fill picked in the Shape bar, and the foreground color when it was: the next shape uses it until the
+    /// foreground changes. Otherwise the next shape is the foreground color.
+    var shapeFillChoice: (fill: PaletteColor, foreground: PaletteColor)?
     /// The layer whose stroke or radius a drag is changing, so the drag is one undo step.
     var shapeStyleEditLayerID: UUID?
     /// The preview drawn while a shape's fill or stroke color is being chosen. Not part of the document or its history.
@@ -892,18 +895,12 @@ final class EditorSession {
         return selectionAmountOperation == nil && colorRange == nil && textDraft == nil && document != nil && brushStroke == nil && warpStroke == nil && !isProjectBusy && !isImporting && !showsNewDocument && !showsImporter && renamingLayerID == nil && cropRect == nil && gradientEdit == nil && pixelMove == nil && hueSaturation == nil && levels == nil && filterEdit == nil && adjustmentEditingID == nil
     }
 
-    func addBlankLayer() {
-        guard canEditLayers, let document else { return }
-        let names = Set(document.layers.map(\.name))
-        var number = 1
-        while names.contains("图层 \(number)") { number += 1 }
-        var layer = ImageLayer(name: "图层 \(number)", blankSize: document.size)
-        layer.parentID = activeLayer?.isGroup == true ? activeLayerID : activeLayer?.parentID
-        if let parent = layer.parentID { collapsedGroupIDs.remove(parent) }
-        var insertion = document.layers.firstIndex { $0.id == activeLayerID }.map { $0 + 1 } ?? document.layers.count
-        // With a folder selected the layer goes to the top of the folder: just above its last (topmost) contents.
+    /// Where a new layer goes in `layers`: just above the active layer, or with a folder selected, at the top of the
+    /// folder — just above its last (topmost) contents. With nothing active, on top.
+    func newLayerIndex(in layers: [ImageLayer]) -> Int {
+        var insertion = layers.firstIndex { $0.id == activeLayerID }.map { $0 + 1 } ?? layers.count
         if activeLayer?.isGroup == true, let folder = activeLayerID {
-            let parents = Dictionary(uniqueKeysWithValues: document.layers.map { ($0.id, $0.parentID) })
+            let parents = Dictionary(uniqueKeysWithValues: layers.map { ($0.id, $0.parentID) })
             func isInside(_ id: UUID) -> Bool {
                 var parent = parents[id] ?? nil
                 var steps = 0
@@ -914,8 +911,20 @@ final class EditorSession {
                 }
                 return false
             }
-            if let topmost = document.layers.lastIndex(where: { isInside($0.id) }) { insertion = max(insertion, topmost + 1) }
+            if let topmost = layers.lastIndex(where: { isInside($0.id) }) { insertion = max(insertion, topmost + 1) }
         }
+        return insertion
+    }
+
+    func addBlankLayer() {
+        guard canEditLayers, let document else { return }
+        let names = Set(document.layers.map(\.name))
+        var number = 1
+        while names.contains("图层 \(number)") { number += 1 }
+        var layer = ImageLayer(name: "图层 \(number)", blankSize: document.size)
+        layer.parentID = activeLayer?.isGroup == true ? activeLayerID : activeLayer?.parentID
+        if let parent = layer.parentID { collapsedGroupIDs.remove(parent) }
+        let insertion = newLayerIndex(in: document.layers)
         var layers = document.layers
         layers.insert(layer, at: insertion)
         // Added in the middle of a clipping group, it joins the group.

@@ -12,7 +12,7 @@ struct ExportAsSheet: View {
     /// The document's layers, which Channel Pack and GIF read; without it, neither is offered.
     let snapshot: ProjectSnapshot?
     private var formats: [ExportFormat] {
-        ExportFormat.allCases.filter { ($0 != .exr || hdrRaster != nil) && (($0 != .channelPack && $0 != .gif) || snapshot != nil) }
+        ExportFormat.allCases.filter { ($0 != .exr || hdrRaster != nil) && (($0 != .channelPack && $0 != .gif && $0 != .psd) || snapshot != nil) }
     }
     let session: EditorSession
     let finish: ((data: Data, format: ExportFormat)?) -> Void
@@ -47,7 +47,7 @@ struct ExportAsSheet: View {
         }
         _options = State(initialValue: start)
         _gifOptions = State(initialValue: GIFExportOptions())
-        _format = State(initialValue: (format == .exr && hdrRaster == nil) || (format == .channelPack && snapshot == nil) ? .png : format)
+        _format = State(initialValue: (format == .exr && hdrRaster == nil) || ((format == .channelPack || format == .psd) && snapshot == nil) ? .png : format)
         _width = State(initialValue: raster.image.width)
         _height = State(initialValue: raster.image.height)
     }
@@ -150,6 +150,8 @@ struct ExportAsSheet: View {
                         moreFormats
                     }
                 }
+                // A Photoshop file keeps every layer as it is, at the document's size.
+                if format != .psd {
                 GridRow {
                     Text("尺寸")
                     HStack(spacing: 6) {
@@ -163,6 +165,14 @@ struct ExportAsSheet: View {
                             }
                         }
                         .fixedSize().help("缩放导出结果；文档本身不变")
+                    }
+                }
+                }
+                if format == .psd, let notes = snapshot.flatMap({ PSDWriter.summary(PSDWriter.notes(for: $0)) }) {
+                    GridRow {
+                        Text("变更说明")
+                        Text(notes).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 420, alignment: .leading)
                     }
                 }
                 if format == .jpeg {
@@ -238,7 +248,8 @@ struct ExportAsSheet: View {
                 }
             }
             HStack(spacing: 12) {
-                Text(format == .channelPack ? "每个通道取自一个图层，按灰度读取 · PNG"
+                Text(format == .psd ? "保留图层、编组与蒙版 · sRGB"
+                     : format == .channelPack ? "每个通道取自一个图层，按灰度读取 · PNG"
                      : format == .gif ? "最多 256 色 · sRGB" : format == .exr ? "保留高光与透明"
                      : takesCMYK && cmyk ? "CMYK – \(profile?.name ?? "无配置文件")"
                      : format == .png || format == .tiff ? "保留透明 · sRGB" : "sRGB")
@@ -296,6 +307,12 @@ struct ExportAsSheet: View {
                     result = Encoded(settings: requested, data: encoded.data, preview: encoded.preview, durations: encoded.durations)
                     return
                 }
+                if requested.format == .psd, let snapshot {
+                    let written = try await ImageExporter.shared.psdData(snapshot)
+                    try Task.checkCancellation()
+                    result = Encoded(settings: requested, data: written.data, preview: written.preview)
+                    return
+                }
                 if requested.format == .channelPack, let snapshot {
                     let packed = try await ImageExporter.shared.channelPack(snapshot, sources: requested.channels,
                                                                             width: requested.width, height: requested.height)
@@ -325,7 +342,7 @@ struct ExportAsSheet: View {
                     } else {
                         preview = try await ImageExporter.shared.flattened(sized, over: background)
                     }
-                case .gif: return
+                case .gif, .psd: return
                 }
                 try Task.checkCancellation()
                 result = Encoded(settings: requested, data: data, preview: preview)
@@ -406,7 +423,7 @@ struct ExportAsSheet: View {
             .pickerStyle(.inline).labelsHidden()
         }
         .menuStyle(.button).fixedSize()
-        .help("其他格式：TIFF、PDF 和 GIF\(others.contains(.exr) ? "，以及保留高光的 EXR" : "")，还有用于游戏贴图的 Channel Pack")
+        .help("其他格式：TIFF、PDF 和 GIF\(others.contains(.exr) ? "，以及保留高光的 EXR" : "")，用于游戏贴图的 Channel Pack，以及为 Photoshop 保留图层的 PSD")
         if chosen { menu.buttonStyle(.borderedProminent) } else { menu.buttonStyle(.bordered) }
     }
 
