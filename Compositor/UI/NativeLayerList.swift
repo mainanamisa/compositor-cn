@@ -16,6 +16,8 @@ struct NativeLayerList: NSViewRepresentable {
         table.intercellSpacing = NSSize(width: 0, height: 2)
         table.allowsMultipleSelection = true
         table.allowsEmptySelection = true
+        // Letters are the tools' and the menus' keys here as on the canvas, never typing to jump to a layer's name.
+        table.allowsTypeSelect = false
         table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("layer"))
         column.width = 252
@@ -529,11 +531,15 @@ struct NativeLayerList: NSViewRepresentable {
                                       : (ids.count > 1 ? "移动多个图层" : "移动图层"))
             var placed = false
             var landed: [UUID] = []
+            var copiesOf: [UUID: UUID] = [:]
             for id in order {
                 let done = copying ? session.duplicateLayer(id, in: parent, above: above, atBottom: atBottom)
                                    : session.placeLayer(id, in: parent, above: above, atBottom: atBottom)
                 placed = done || placed
-                if done, let copy = copying ? session.activeLayerID : id { landed.append(copy) }
+                if done, let copy = copying ? session.activeLayerID : id {
+                    landed.append(copy)
+                    if copying { copiesOf[id] = copy }
+                }
             }
             // Over the top of a clipping group, the drop said which side: joining the group, or above it, unclipped.
             if placed, base != nil || unclipped {
@@ -543,6 +549,8 @@ struct NativeLayerList: NSViewRepresentable {
                     session.document?.layers[index].maskSourceID = base
                 }
             }
+            // A base copied with its clipped layers stays their base, wherever the copies land.
+            if placed, copying { session.relinkCopiedClipping(copiesOf) }
             // The layers that moved stay selected, so they can be dragged on as a group.
             if placed, !copying { session.selectLayers(Set(ids), primary: ids.first) }
             session.endEdit()
@@ -844,11 +852,16 @@ final class LayerTableView: NSTableView {
         let point = convert(event.locationInWindow, from: nil)
         let row = row(at: point)
         // Handle clipping before effect selection: effects occupy the lower portion of taller rows.
+        // A press that drags from there is still an Option-drag, a copy: only a click clips. Taken at once, a duplicate
+        // dragged from low on its row did nothing but clip.
         if event.modifierFlags.contains(.option), !event.modifierFlags.contains(.command), isClippingZone(point, row: row),
            thumbnail(at: point)?.isMaskTarget != true, displayedRows.indices.contains(row) {
             session?.effectSelection = nil
-            session?.toggleClippingMask(displayedRows[row].id)
-            refreshClippingCursor(event.modifierFlags)
+            let id = displayedRows[row].id
+            trackRowPress(event) { [weak self] in
+                self?.session?.toggleClippingMask(id)
+                self?.refreshClippingCursor(event.modifierFlags)
+            }
             return
         }
         if row >= 0, let cell = view(atColumn: 0, row: row, makeIfNecessary: false) as? LayerCell,
@@ -873,6 +886,8 @@ final class LayerTableView: NSTableView {
     fileprivate var outsideDragSource: LayerRowDragSource?
     /// Each step of a row drag, for tests: the picked-up row's picture and where a release would land.
     static var rowDragStepForTesting: ((LayerTableView, NSView, DropTarget?) -> Void)?
+    /// How each row drag ended, for tests: "up", "late up", "no up".
+    static var rowDragEndForTesting: ((String) -> Void)?
     /// Takes over from the list's own drag once the pointer leaves the Layers panel; tests swap it to watch.
     var beginsOutsideDrag: (LayerTableView, [UUID], NSImage?, NSRect, NSEvent) -> Void = { table, ids, image, frame, event in
         table.beginSystemDrag(ids: ids, image: image, frame: frame, event: event)
@@ -882,16 +897,18 @@ final class LayerTableView: NSTableView {
     /// blend and opacity controls too, where a release puts them first, until the pointer leaves the Layers panel or
     /// rises above those controls, when it becomes an ordinary drag, to copy into another tab or onto the canvas. The
     /// system's own drag, used before, left the list the moment the pointer did.
-    private func trackRowPress(_ down: NSEvent) {
+    /// `click`, when given, is what a press that doesn't drag does, in place of the list's own click.
+    private func trackRowPress(_ down: NSEvent, click: (() -> Void)? = nil) {
         let start = convert(down.locationInWindow, from: nil)
         let pressed = row(at: start)
         guard let window, let session, session.canEditLayers, displayedRows.indices.contains(pressed),
               down.modifierFlags.intersection([.command, .shift]).isEmpty, down.clickCount == 1 else {
-            super.mouseDown(with: down)
+            if let click { click() } else { super.mouseDown(with: down) }
             return
         }
         while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if event.type == .leftMouseUp {
+                if let click { click(); return }
                 // A click: handed back, so the list takes it as it always has.
                 window.postEvent(event, atStart: true)
                 super.mouseDown(with: down)
@@ -1107,21 +1124,34 @@ final class LayerTableView: NSTableView {
 
         follow(first)
         var last = first
+        // A copy with Option held as the drag began or as it's dropped: let go of a moment before the button, it used to
+        // be a move, which right above the original changed nothing.
+        func release(option: Bool) {
+            guard let target else { return }
+            coordinator.drop(ids, at: target.row, intoFolder: target.intoFolder, bottomOf: target.bottomOf,
+                             clippedTo: target.clippedTo, unclipped: target.unclipped,
+                             copying: first.modifierFlags.contains(.option) || option)
+        }
         while true {
             guard let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp, .keyDown],
                                                until: Date(timeIntervalSinceNow: 0.05), inMode: .eventTracking, dequeue: true) else {
-                // The button let go without its mouse-up reaching the list: the drag is over, rather than held forever.
-                guard NSEvent.pressedMouseButtons & 1 != 0 else { return }
-                follow(last) // held near an edge: it keeps scrolling
-                continue
+                if NSEvent.pressedMouseButtons & 1 != 0 {
+                    follow(last) // held near an edge: it keeps scrolling
+                    continue
+                }
+                // The button is up but its mouse-up hasn't arrived: let go just as the wait ran out, the mouse-up is
+                // usually on its way. Taken as no release at all, about one quick drag in three dropped nothing.
+                let up = window.nextEvent(matching: .leftMouseUp, until: Date(timeIntervalSinceNow: 0.25), inMode: .eventTracking, dequeue: true)
+                Self.rowDragEndForTesting?(up == nil ? "no up" : "late up")
+                if let up { follow(up) }
+                release(option: (up ?? last).modifierFlags.contains(.option) || NSEvent.modifierFlags.contains(.option))
+                return
             }
             switch event.type {
             case .leftMouseUp:
-                if let target {
-                    coordinator.drop(ids, at: target.row, intoFolder: target.intoFolder, bottomOf: target.bottomOf,
-                                     clippedTo: target.clippedTo, unclipped: target.unclipped,
-                                     copying: event.modifierFlags.contains(.option))
-                }
+                Self.rowDragEndForTesting?("up")
+                follow(event)
+                release(option: event.modifierFlags.contains(.option))
                 return
             case .keyDown where event.keyCode == 53:
                 return
@@ -1193,6 +1223,9 @@ final class LayerTableView: NSTableView {
             session?.resetPaletteColors()
         } else if plain, event.charactersIgnoringModifiers?.lowercased() == "t" {
             session?.selectTool(.type)
+        } else if plain, event.charactersIgnoringModifiers?.lowercased() == "f" {
+            // Toggle Fullscreen, through its menu item, as on the canvas; the list used to take it as typing to a row.
+            _ = NSApp.mainMenu?.performKeyEquivalent(with: event)
         } else if plain, ["a", "v", "h", "z", "b", "e", "g", "l", "m", "w", "j", "s", "u", "r", "i", "c"].contains(event.charactersIgnoringModifiers?.lowercased() ?? "") {
             let key = event.charactersIgnoringModifiers?.lowercased()
             if key == "m" { if !event.isARepeat { session?.pressMarqueeKey() } }
