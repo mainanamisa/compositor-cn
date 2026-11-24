@@ -125,6 +125,52 @@ import Testing
         s.undo()
         #expect(s.document?.layers.last?.id == ids[2] && s.document?.layers.last?.maskSourceID == ids[0])
     }
+    /// Hiding a clipping stack's base hides the layers clipped to it, rather than leaving them showing on their own, and
+    /// showing it brings them back; hiding a clipped layer leaves the base and the rest of the stack showing.
+    @Test func hidingTheBaseHidesItsClippingStack() async throws {
+        let s = EditorSession(); s.createDocument(width: 2, height: 2)
+        s.insert(try asset([255, 255, 0, 0])); s.insert(try asset([255, 255, 255, 255], color: 0)); s.insert(try asset([255, 255, 255, 255]))
+        let ids = try #require(s.document?.layers.map(\.id))
+        #expect(s.linkMask(source: ids[0], target: ids[1]) && s.linkMask(source: ids[0], target: ids[2]))
+        func shown() async throws -> [UInt8] { try alpha(await ImageExporter.shared.render(#require(s.projectSnapshot())).image) }
+        #expect(try await shown() == [255, 255, 0, 0])
+        s.toggleLayerVisibility(ids[0])
+        #expect(s.document?.effectiveVisibleIDs.isDisjoint(with: ids) == true, "the base and its clipped layers are hidden")
+        #expect(try await shown() == [0, 0, 0, 0])
+        s.toggleLayerVisibility(ids[0])
+        #expect(s.document?.effectiveVisibleIDs.isSuperset(of: ids) == true)
+        #expect(try await shown() == [255, 255, 0, 0])
+        s.toggleLayerVisibility(ids[1])
+        #expect(s.document?.effectiveVisibleIDs == [ids[0], ids[2]])
+
+        // With the base hidden, a clipped layer's eye shows the whole stack again, its own hidden layers too.
+        s.toggleLayerVisibility(ids[0])
+        #expect(s.document?.effectiveVisibleIDs.isEmpty == true)
+        #expect(s.beginVisibilitySwipe(ids[2]) == true)
+        s.endVisibilitySwipe()
+        #expect(s.document?.effectiveVisibleIDs.isSuperset(of: ids) == true)
+        #expect(s.document?.layers.allSatisfy(\.isVisible) == true)
+        s.undo()
+        #expect(s.document?.effectiveVisibleIDs.isEmpty == true, "one undo step")
+    }
+    /// Duplicating a base with the layer clipped to it makes a second stack: the base's copy a base, the clipped
+    /// layer's copy clipped to it, rather than both clipped to the original base.
+    @Test func duplicatingABaseWithItsClippedLayerMakesASecondStack() throws {
+        let s = EditorSession(); s.createDocument(width: 2, height: 2)
+        s.insert(try asset([255, 255, 0, 0])); s.insert(try asset([255, 255, 255, 255], color: 0))
+        let base = try #require(s.document?.layers[0].id), clipped = try #require(s.document?.layers[1].id)
+        #expect(s.linkMask(source: base, target: clipped))
+        s.selectLayers([base, clipped], primary: clipped)
+        s.duplicateActiveLayer()
+        let layers = try #require(s.document?.layers)
+        #expect(layers.count == 4)
+        #expect(Array(layers.prefix(2).map(\.id)) == [base, clipped], "the originals stay as they were")
+        #expect(layers[1].maskSourceID == base)
+        #expect(layers[2].maskSourceID == nil, "the base's copy is a base")
+        #expect(layers[3].maskSourceID == layers[2].id, "the clipped copy is clipped to it")
+        s.undo()
+        #expect(s.document?.layers.count == 2, "one undo step")
+    }
     @Test func hiddenBlackSourceSuppliesAlphaAndRasterMasksMultiply() async throws {
         let s = try fixture()
         var raster = try await ImageExporter.shared.render(#require(s.projectSnapshot()))

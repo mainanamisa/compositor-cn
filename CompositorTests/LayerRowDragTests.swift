@@ -183,6 +183,79 @@ import Testing
         #expect(rig.table.selectedRowIndexes == IndexSet(integer: 1))
     }
 
+    /// Option-dragging a layer from low on its row, where an Option-click clips, and letting go of Option a moment
+    /// before the button, still drops a copy right above it; an Option-click there still clips.
+    @Test func anOptionDragFromLowOnTheRowStillDuplicates() throws {
+        let rig = try rig()
+        defer { rig.window.orderOut(nil) }
+        let original = try #require(rig.session.filteredLayerRows[1].layer)
+        let frame = rig.table.rect(ofRow: 1)
+        let low = rig.table.convert(NSPoint(x: frame.midX, y: frame.maxY - 3), to: nil)
+        let above = rig.table.convert(NSPoint(x: frame.midX, y: frame.minY + 3), to: nil)
+        // What the drag did at each step, reported if it lands wrong: it has, now and then, on CI alone.
+        var steps: [String] = []
+        LayerTableView.rowDragStepForTesting = { _, _, target in steps.append("aim \(target.map { String($0.row) } ?? "none")") }
+        LayerTableView.rowDragEndForTesting = { steps.append($0) }
+        defer { LayerTableView.rowDragStepForTesting = nil; LayerTableView.rowDragEndForTesting = nil }
+        let before = names(rig.session)
+        NSApp.postEvent(try mouse(.leftMouseDragged, NSPoint(x: low.x, y: low.y + 5), in: rig.window, flags: .option), atStart: false)
+        NSApp.postEvent(try mouse(.leftMouseDragged, above, in: rig.window, flags: .option), atStart: false)
+        NSApp.postEvent(try mouse(.leftMouseUp, above, in: rig.window), atStart: false)
+        rig.table.mouseDown(with: try mouse(.leftMouseDown, low, in: rig.window, flags: .option))
+        let rows = rig.session.filteredLayerRows.map(\.layer)
+        #expect(rows.count == 4, "a copy was made")
+        #expect(rows[2].id == original.id && rows[1].id != original.id,
+                "right above the original: \(before) became \(rows.map(\.name)); \(steps); visible \(rig.table.visibleRect)")
+        #expect(rows.allSatisfy { $0.maskSourceID == nil }, "and nothing was clipped")
+
+        // A click there, without moving, clips the layer to the one below.
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        #expect(rig.table.displayedRows.count == 4)
+        let clicked = try #require(rig.table.displayedRows[2])
+        let strip = rig.table.convert(NSPoint(x: rig.table.rect(ofRow: 2).midX, y: rig.table.rect(ofRow: 2).maxY - 3), to: nil)
+        NSApp.postEvent(try mouse(.leftMouseUp, strip, in: rig.window, flags: .option), atStart: false)
+        rig.table.mouseDown(with: try mouse(.leftMouseDown, strip, in: rig.window, flags: .option))
+        #expect(rig.session.document?.layers.first { $0.id == clicked.id }?.maskSourceID != nil)
+    }
+
+    /// Option-dragging a base and the layer clipped to it to just above them copies the stack: the base's copy a base,
+    /// the clipped copy clipped to it.
+    @Test func optionDraggingAClippingStackCopiesIt() throws {
+        let rig = try rig(layers: 2)
+        defer { rig.window.orderOut(nil) }
+        let base = try #require(rig.session.document?.layers[0].id), clipped = try #require(rig.session.document?.layers[1].id)
+        #expect(rig.session.linkMask(source: base, target: clipped))
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        let coordinator = try #require(rig.table.delegate as? NativeLayerList.Coordinator)
+        #expect(coordinator.drop([clipped, base], at: 0, intoFolder: false, copying: true))
+        let layers = try #require(rig.session.document?.layers)
+        #expect(layers.count == 4)
+        #expect(layers[1].maskSourceID == base)
+        #expect(layers[2].maskSourceID == nil, "the base's copy is a base")
+        #expect(layers[3].maskSourceID == layers[2].id, "the clipped copy is clipped to it")
+    }
+
+    /// A letter typed with the list holding the keys is a shortcut, never a jump to the layer whose name starts with it:
+    /// F, Toggle Fullscreen, used to select a folder called "Folder 1".
+    @Test func lettersDontJumpToALayersName() throws {
+        let rig = try rig { session in
+            if let index = session.document?.layers.indices.first { session.document?.layers[index].name = "Folder 1" }
+        }
+        defer { rig.window.orderOut(nil) }
+        let point = middle(of: 0, in: rig.table)
+        NSApp.postEvent(try mouse(.leftMouseUp, point, in: rig.window), atStart: false)
+        rig.table.mouseDown(with: try mouse(.leftMouseDown, point, in: rig.window))
+        let selected = rig.table.selectedRowIndexes
+        for key in ["f", "k", "q"] {
+            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: rig.window.windowNumber, context: nil, characters: key, charactersIgnoringModifiers: key,
+                isARepeat: false, keyCode: key == "f" ? 3 : key == "k" ? 40 : 12))
+            rig.table.keyDown(with: event)
+        }
+        #expect(rig.table.selectedRowIndexes == selected)
+        #expect(rig.table.allowsTypeSelect == false)
+    }
+
     @Test func leavingThePanelHandsOverToAnOrdinaryDrag() throws {
         let rig = try rig()
         defer { rig.window.orderOut(nil) }
