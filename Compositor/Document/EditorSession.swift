@@ -969,17 +969,13 @@ final class EditorSession {
 
     func toggleLayerVisibility(_ id: UUID) {
         guard canEditLayers, let index = document?.layers.firstIndex(where: { $0.id == id }) else { return }
-<<<<<<< HEAD
-        beginEdit(document?.layers[index].isVisible == true ? "隐藏图层" : "显示图层")
-=======
         if let stack = hiddenClippingStack(of: id) {
-            beginEdit("Show Layers")
+            beginEdit("显示图层")
             defer { endEdit() }
             for layer in stack { setVisibilityInSwipe(layer, visible: true) }
             return
         }
-        beginEdit(document?.layers[index].isVisible == true ? "Hide Layer" : "Show Layer")
->>>>>>> v1.7.0
+        beginEdit(document?.layers[index].isVisible == true ? "隐藏图层" : "显示图层")
         defer { endEdit() }
         document?.layers[index].isVisible.toggle()
     }
