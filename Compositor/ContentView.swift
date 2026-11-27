@@ -119,6 +119,10 @@ struct ContentView: View {
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("editor")) } action: { canvasFrame = $0 }
                     }
+                    if !session.canvasOnly, let layer = session.activeLayer, let movie = layer.movie {
+                        Divider()
+                        MovieTimeline(session: session, layer: layer, link: movie).id(layer.id)
+                    }
                     if !session.canvasOnly,
                        let gifLayerID = session.gifTimelineLayerID,
                        session.activeLayerID == gifLayerID,
@@ -310,7 +314,7 @@ struct ContentView: View {
         }
         // A folder brings in the images directly inside it.
         .fileImporter(isPresented: $session.showsImporter,
-                      allowedContentTypes: UTType.importableImages + [.folder], allowsMultipleSelection: true) { result in
+                      allowedContentTypes: UTType.importableImages + [.quickTimeMovie, .mpeg4Movie, .folder], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): Task { await session.importImages(urls) }
             case .failure(let error):
