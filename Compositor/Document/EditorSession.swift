@@ -1,11 +1,12 @@
 import SwiftUI
+import AVFoundation
 import UniformTypeIdentifiers
 
 struct ImageLayer: Identifiable, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.name == rhs.name && lhs.isVisible == rhs.isVisible && lhs.transform == rhs.transform
             && lhs.asset?.image === rhs.asset?.image && lhs.parentID == rhs.parentID && lhs.isGroup == rhs.isGroup && lhs.opacity == rhs.opacity && lhs.blendMode == rhs.blendMode && lhs.mask == rhs.mask && lhs.maskSourceID == rhs.maskSourceID && lhs.adjustment == rhs.adjustment && lhs.shape == rhs.shape && lhs.text == rhs.text && lhs.effects == rhs.effects
-            && lhs.gifAnimation == rhs.gifAnimation
+            && lhs.gifAnimation == rhs.gifAnimation && lhs.movie == rhs.movie
     }
     let id: UUID
     var asset: ImportedImage?
@@ -20,6 +21,7 @@ struct ImageLayer: Identifiable, Equatable {
     var maskSourceID: UUID?
     var mask: LayerMask?
     /// Masks scoped to frames in an imported GIF. The frames remain part of this one layer.
+    var movie: MovieLink?
     var gifAnimation: GIFAnimation? = nil
     var adjustment: LayerAdjustment?
     /// Set on layers the Shape tool made; see `liveShape`.
@@ -43,7 +45,8 @@ struct ImageLayer: Identifiable, Equatable {
         self.name = name
     }
 
-    init(id: UUID, asset: ImportedImage?, name: String, isVisible: Bool, transform: LayerTransform, parentID: UUID? = nil, isGroup: Bool = false, opacity: Double = 1, blendMode: LayerBlendMode = .normal, mask: LayerMask? = nil, maskSourceID: UUID? = nil, adjustment: LayerAdjustment? = nil, shape: LayerShape? = nil, effects: LayerEffects? = nil, text: LayerText? = nil, gifAnimation: GIFAnimation? = nil) {
+    init(id: UUID, asset: ImportedImage?, name: String, isVisible: Bool, transform: LayerTransform, parentID: UUID? = nil, isGroup: Bool = false, opacity: Double = 1, blendMode: LayerBlendMode = .normal, mask: LayerMask? = nil, maskSourceID: UUID? = nil, adjustment: LayerAdjustment? = nil, shape: LayerShape? = nil, effects: LayerEffects? = nil, text: LayerText? = nil, gifAnimation: GIFAnimation? = nil, movie: MovieLink? = nil) {
+        self.movie = movie
         self.id = id
         self.asset = asset
         self.name = name
@@ -166,7 +169,8 @@ final class EditorSession {
 
     /// Frame navigation stays in runtime state; pixel edits are immutable assets stored on the animation.
     /// A shape color being chosen is drawn in place of the committed pixels and is not part of the saved document.
-    func displayedAsset(for layer: ImageLayer) -> ImportedImage? {
+    func displayedAsset(for layer: ImageLayer, onCanvas: Bool = false) -> ImportedImage? {
+        if onCanvas, let preview = moviePreview, preview.id == layer.id { return preview.frame }
         let saved = savedAsset(for: layer)
         if let preview = shapeColorPreview, preview.layerID == layer.id, let saved {
             return ImportedImage(image: preview.image, thumbnail: saved.thumbnail, name: saved.name)
@@ -180,8 +184,8 @@ final class EditorSession {
         return layer.gifAnimation?.framePixels[timeline.selectedFrameIndex] ?? timeline.displayedAsset ?? layer.asset
     }
 
-    func displayedLayer(for layer: ImageLayer) -> ImageLayer {
-        guard let asset = displayedAsset(for: layer), asset.image !== layer.asset?.image else { return layer }
+    func displayedLayer(for layer: ImageLayer, onCanvas: Bool = false) -> ImageLayer {
+        guard let asset = displayedAsset(for: layer, onCanvas: onCanvas), asset.image !== layer.asset?.image else { return layer }
         var displayed = layer
         displayed.asset = asset
         return displayed
@@ -1056,6 +1060,9 @@ final class EditorSession {
         document?.layers.swapAt(a, b)
         endEdit()
     }
+    var moviePlayback: (id: UUID, player: AVPlayer)?
+    var moviePreview: (id: UUID, frame: ImportedImage)?
+
     private struct ImportRequest {
         let files: [(url: URL, scoped: Bool)]
         let point: CGPoint?
@@ -1108,12 +1115,14 @@ final class EditorSession {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             // A CMYK file making a new document: its profile is kept and chosen, for proofing and for CMYK export when
             // it's asked for.
+            let type = UTType(filenameExtension: url.pathExtension)
+            let isMovie = type?.conforms(to: .quickTimeMovie) == true || type?.conforms(to: .mpeg4Movie) == true
             let startsDocument = document == nil
             var psdProfile: CMYKProfile?
             defer {
                 if startsDocument, document != nil {
                     if projectURL == nil { sourceImageURL = url }
-                    if let profile = psdProfile ?? CMYK.profile(ofImageAt: url) { proofProfile = CMYK.adopt(profile) }
+                    if !isMovie, let profile = psdProfile ?? CMYK.profile(ofImageAt: url) { proofProfile = CMYK.adopt(profile) }
                 }
             }
             do {
@@ -1122,7 +1131,10 @@ final class EditorSession {
                     total + (layer.asset.map { $0.image.width * $0.image.height } ?? 0)
                         + (layer.gifAnimation?.framePixels.values.reduce(0) { $0 + $1.image.width * $1.image.height } ?? 0)
                 } ?? 0
-                if RawImporter.matches(url) {
+                if isMovie {
+                    let (movie, frame) = try await MovieFramePicker.open(url, remainingPixels: DocumentLimits.documentPixelBudget - usedPixels)
+                    insert(frame, centeredAt: point, movie: movie)
+                } else if RawImporter.matches(url) {
                     guard let size = RawImporter.pixelSize(url) else { throw ImageImportError.unreadable }
                     guard size.width <= DocumentLimits.maxSide, size.height <= DocumentLimits.maxSide,
                           size.width * size.height <= DocumentLimits.documentPixelBudget - usedPixels else { throw ImageImportError.tooLarge }
@@ -1207,8 +1219,8 @@ final class EditorSession {
         }
     }
 
-    func insert(_ asset: ImportedImage, centeredAt point: CGPoint? = nil, gifAnimation: GIFAnimation? = nil) {
-        beginEdit("导入图像")
+    func insert(_ asset: ImportedImage, centeredAt point: CGPoint? = nil, gifAnimation: GIFAnimation? = nil, movie: MovieLink? = nil) {
+        beginEdit("导入")
         defer { endEdit() }
         if document == nil {
             document = CanvasDocument(width: asset.image.width, height: asset.image.height)
@@ -1220,6 +1232,7 @@ final class EditorSession {
             x: floor(center.x - CGFloat(asset.image.width) / 2),
             y: floor(center.y - CGFloat(asset.image.height) / 2)))
         layer.gifAnimation = gifAnimation
+        layer.movie = movie
         layer.parentID = activeLayer?.isGroup == true ? activeLayerID : activeLayer?.parentID
         if let parent = layer.parentID { collapsedGroupIDs.remove(parent) }
         self.document?.layers.append(layer)
